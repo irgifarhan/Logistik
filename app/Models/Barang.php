@@ -21,7 +21,6 @@ class Barang extends Model
         'keterangan'
     ];
 
-    // Relationships
     public function kategori()
     {
         return $this->belongsTo(Kategori::class);
@@ -40,5 +39,16 @@ class Barang extends Model
     public function permintaan()
     {
         return $this->hasMany(Permintaan::class);
+    }
+
+    public function pengeluaran()
+    {
+        return $this->hasMany(Pengeluaran::class);
+    }
+
+    // Scope untuk barang dengan stok rendah
+    public function scopeLowStock($query)
+    {
+        return $query->where('stok', '<=', \DB::raw('stok_minimal'));
     }
 }

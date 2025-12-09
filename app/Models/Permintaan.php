@@ -47,9 +47,30 @@ class Permintaan extends Model
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    public function pengeluaran()
+    {
+        return $this->hasOne(Pengeluaran::class);
+    }
+
     // Status constants
     const STATUS_PENDING = 'pending';
     const STATUS_APPROVED = 'approved';
     const STATUS_REJECTED = 'rejected';
     const STATUS_DELIVERED = 'delivered';
+
+    // Scope untuk status
+    public function scopePending($query)
+    {
+        return $query->where('status', self::STATUS_PENDING);
+    }
+
+    public function scopeApproved($query)
+    {
+        return $query->where('status', self::STATUS_APPROVED);
+    }
+
+    public function scopeRejected($query)
+    {
+        return $query->where('status', self::STATUS_REJECTED);
+    }
 }
