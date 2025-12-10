@@ -470,13 +470,6 @@
                 </a>
             </div>
             
-            <!-- <div class="nav-item">
-                <a href="{{ route('admin.satker') }}" class="nav-link">
-                    <i class="bi bi-building"></i>
-                    <span>Satuan Kerja</span>
-                </a>
-            </div> -->
-            
             <div class="nav-item">
                 <a href="{{ route('admin.reports') }}" class="nav-link">
                     <i class="bi bi-file-text"></i>
