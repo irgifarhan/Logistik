@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Permintaan;
+use App\Models\PermintaanDetail; // Tambahkan model ini jika belum ada
 use App\Models\Barang;
 use App\Models\Satker;
 use Illuminate\Http\Request;
@@ -20,7 +21,13 @@ class PermintaanController extends Controller
         $search = request('search');
         $satker = request('satker');
         
-        $requests = Permintaan::with(['user', 'barang', 'satker'])
+        $requests = Permintaan::with([
+                'user', 
+                'barang.satuan',  // Load satuan melalui barang
+                'satker',
+                'details.barang.satuan', // Load details dengan barang dan satuan
+                'details.satker'         // Load satker untuk setiap detail
+            ])
             ->when($status && $status != 'all', function($query) use ($status) {
                 return $query->where('status', $status);
             })
@@ -33,11 +40,18 @@ class PermintaanController extends Controller
                       ->orWhereHas('barang', function($barangQuery) use ($search) {
                           $barangQuery->where('nama_barang', 'like', "%{$search}%")
                                       ->orWhere('kode_barang', 'like', "%{$search}%");
+                      })
+                      ->orWhereHas('details.barang', function($detailQuery) use ($search) {
+                          $detailQuery->where('nama_barang', 'like', "%{$search}%")
+                                      ->orWhere('kode_barang', 'like', "%{$search}%");
                       });
                 });
             })
             ->when($satker, function($query) use ($satker) {
-                return $query->where('satker_id', $satker);
+                return $query->where('satker_id', $satker)
+                            ->orWhereHas('details', function($q) use ($satker) {
+                                $q->where('satker_id', $satker);
+                            });
             })
             ->latest()
             ->paginate(10);
@@ -104,9 +118,19 @@ class PermintaanController extends Controller
     
     public function show(Permintaan $permintaan)
     {
+        $permintaan->load([
+            'user', 
+            'barang.satuan', 
+            'satker',
+            'details.barang.satuan',
+            'details.satker',
+            'approver',
+            'deliverer'
+        ]);
+        
         return response()->json([
             'success' => true,
-            'request' => $permintaan->load(['user', 'barang', 'satker', 'barang.satuan', 'approver'])
+            'request' => $permintaan
         ]);
     }
     
@@ -131,6 +155,11 @@ class PermintaanController extends Controller
                 'approved_at' => now(),
                 'catatan' => $permintaan->catatan ?? 'Disetujui oleh admin - Menunggu pengiriman',
             ]);
+            
+            // Jika ada details, update status details juga
+            if ($permintaan->details()->exists()) {
+                $permintaan->details()->update(['status' => 'approved']);
+            }
             
             // Log aktivitas approval
             ActivityLogController::logApprovePermintaan($permintaan, $oldStatus);
@@ -172,6 +201,11 @@ class PermintaanController extends Controller
             'catatan' => $validated['reason'],
         ]);
         
+        // Jika ada details, update status details juga
+        if ($permintaan->details()->exists()) {
+            $permintaan->details()->update(['status' => 'rejected']);
+        }
+        
         // Log aktivitas reject
         ActivityLogController::logRejectPermintaan($permintaan, $oldStatus, $validated['reason']);
         
@@ -191,36 +225,54 @@ class PermintaanController extends Controller
             ], 400);
         }
         
-        // Validasi stok cukup saat akan dikirim
-        if ($permintaan->barang->stok < $permintaan->jumlah) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Stok tidak mencukupi untuk dikirim. Stok tersedia: ' . $permintaan->barang->stok . ', Jumlah yang diminta: ' . $permintaan->jumlah
-            ], 400);
-        }
-        
-        $validated = $request->validate([
-            'catatan' => 'nullable|string'
-        ]);
-        
         DB::beginTransaction();
         try {
             // Simpan status lama untuk logging
             $oldStatus = $permintaan->status;
             
             // Kurangi stok barang
-            $permintaan->barang->decrement('stok', $permintaan->jumlah);
+            if ($permintaan->details()->exists()) {
+                // Untuk multi barang, kurangi stok setiap barang
+                foreach ($permintaan->details as $detail) {
+                    if ($detail->barang->stok < $detail->jumlah) {
+                        DB::rollback();
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Stok tidak mencukupi untuk barang: ' . $detail->barang->nama_barang . 
+                                        '. Stok tersedia: ' . $detail->barang->stok . 
+                                        ', Jumlah yang diminta: ' . $detail->jumlah
+                        ], 400);
+                    }
+                    $detail->barang->decrement('stok', $detail->jumlah);
+                }
+            } else {
+                // Untuk single barang
+                if ($permintaan->barang->stok < $permintaan->jumlah) {
+                    DB::rollback();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Stok tidak mencukupi untuk dikirim. Stok tersedia: ' . 
+                                    $permintaan->barang->stok . ', Jumlah yang diminta: ' . $permintaan->jumlah
+                    ], 400);
+                }
+                $permintaan->barang->decrement('stok', $permintaan->jumlah);
+            }
             
             // Update status menjadi delivered
             $permintaan->update([
                 'status' => 'delivered',
                 'delivered_at' => now(),
                 'delivered_by' => auth()->id(),
-                'catatan' => $validated['catatan'] ?? $permintaan->catatan . ' - Barang telah dikirim',
+                'catatan' => $request->input('catatan', $permintaan->catatan . ' - Barang telah dikirim'),
             ]);
             
+            // Jika ada details, update status details juga
+            if ($permintaan->details()->exists()) {
+                $permintaan->details()->update(['status' => 'delivered']);
+            }
+            
             // Log aktivitas distribusi barang
-            ActivityLogController::logDeliverPermintaan($permintaan, $oldStatus, $validated['catatan'] ?? null);
+            ActivityLogController::logDeliverPermintaan($permintaan, $oldStatus, $request->input('catatan'));
             
             DB::commit();
             
@@ -238,7 +290,6 @@ class PermintaanController extends Controller
         }
     }
     
-    // Method untuk mengubah status menjadi delivered (tanpa validasi stok - untuk emergency)
     public function forceDelivered(Request $request, Permintaan $permintaan)
     {
         // Hanya untuk admin senior
@@ -274,6 +325,11 @@ class PermintaanController extends Controller
                 'catatan' => $permintaan->catatan . ' - ' . $validated['catatan'] . ' (FORCE: ' . $validated['force_reason'] . ')',
             ]);
             
+            // Jika ada details, update status details juga
+            if ($permintaan->details()->exists()) {
+                $permintaan->details()->update(['status' => 'delivered']);
+            }
+            
             // Log aktivitas distribusi paksa (tanpa mengurangi stok)
             $logData = [
                 'permintaan_id' => $permintaan->id,
@@ -301,16 +357,20 @@ class PermintaanController extends Controller
         }
     }
     
-    // Method untuk melihat history transaksi
     public function getTransactionHistory($barangId = null)
     {
         // Menggunakan model Permintaan sebagai catatan transaksi
         $query = Permintaan::where('status', 'delivered')
-            ->with(['barang', 'user', 'approver', 'deliverer'])
+            ->with(['barang', 'user', 'approver', 'deliverer', 'details.barang'])
             ->latest('delivered_at');
             
         if ($barangId) {
-            $query->where('barang_id', $barangId);
+            $query->where(function($q) use ($barangId) {
+                $q->where('barang_id', $barangId)
+                  ->orWhereHas('details', function($detailQuery) use ($barangId) {
+                      $detailQuery->where('barang_id', $barangId);
+                  });
+            });
         }
         
         $transactions = $query->get();

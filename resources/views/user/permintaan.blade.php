@@ -491,11 +491,11 @@
                 </div>
             </div>
             
-            <!-- Form Edit - MASIH SATU BARANG (sementara) -->
+            <!-- Form Edit - MULTI BARANG -->
             @elseif(isset($isEdit))
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Edit Permintaan</h5>
+                    <h5 class="mb-0">Edit Permintaan - {{ $permintaan->kode_permintaan }}</h5>
                     <a href="{{ route('user.permintaan') }}" class="btn btn-secondary btn-sm">
                         <i class="bi bi-arrow-left me-1"></i>Kembali ke Daftar
                     </a>
@@ -505,57 +505,223 @@
                         @csrf
                         @method('PUT')
                         
-                        <!-- Info Barang -->
-                        <div class="card mb-4">
-                            <div class="card-header bg-light">
-                                <h6 class="mb-0">Informasi Barang</h6>
+                        <!-- Info Permintaan -->
+                        <div class="alert alert-info mb-4">
+                            <div class="d-flex">
+                                <div class="me-3">
+                                    <i class="bi bi-info-circle"></i>
+                                </div>
+                                <div>
+                                    <p class="mb-1"><strong>Informasi Permintaan:</strong></p>
+                                    <p class="mb-0">Kode: {{ $permintaan->kode_permintaan }} | 
+                                       Tanggal Dibuat: {{ $permintaan->created_at->format('d/m/Y H:i') }} | 
+                                       Status: <span class="badge bg-warning">Pending</span></p>
+                                </div>
                             </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-4">
-                                        <p class="mb-1"><strong>Kode Barang:</strong></p>
-                                        <p>{{ $permintaan->barang->kode_barang ?? '-' }}</p>
+                        </div>
+                        
+                        <!-- Bagian Pencarian Barang untuk Edit -->
+                        <div class="row mb-4">
+                            <div class="col-md-10">
+                                <label for="edit_barang_search" class="form-label">
+                                    Cari Barang untuk Ditambahkan
+                                    <span class="text-danger">*</span>
+                                </label>
+                                <select class="form-select select2-barang-search" id="edit_barang_search" 
+                                        style="width: 100%;">
+                                    <option value="">-- Pilih Barang --</option>
+                                    @if(isset($barang) && $barang->count() > 0)
+                                        @foreach($barang as $item)
+                                        <option value="{{ $item->id }}" 
+                                                data-stok="{{ $item->stok }}"
+                                                data-kode="{{ $item->kode_barang }}"
+                                                data-nama="{{ $item->nama_barang }}"
+                                                data-satuan="{{ $item->satuan->nama_satuan ?? 'unit' }}"
+                                                data-kategori="{{ $item->kategori->nama_kategori ?? '-' }}">
+                                            {{ $item->kode_barang }} - {{ $item->nama_barang }} (Stok: {{ $item->stok }})
+                                        </option>
+                                        @endforeach
+                                    @endif
+                                </select>
+                                <div class="form-text">Ketik untuk mencari barang yang tersedia</div>
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button type="button" class="btn btn-primary w-100" id="edit_btnTambahBarang" disabled>
+                                    <i class="bi bi-plus-circle me-1"></i>Tambah
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Quick Preview Barang yang Dipilih -->
+                        <div class="alert alert-info quick-preview mb-3" id="edit_quickPreview" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <strong>Kode:</strong> <span id="edit_previewKode">-</span>
+                                </div>
+                                <div class="col-md-4">
+                                    <strong>Nama:</strong> <span id="edit_previewNama">-</span>
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>Stok:</strong> <span id="edit_previewStok">-</span>
+                                </div>
+                                <div class="col-md-2">
+                                    <strong>Satuan:</strong> <span id="edit_previewSatuan">-</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Tombol Aksi Daftar -->
+                        <div class="row mb-3">
+                            <div class="col-md-12">
+                                <button type="button" class="btn btn-outline-danger btn-sm" id="edit_btnKosongkanDaftar">
+                                    <i class="bi bi-trash me-1"></i>Kosongkan Semua
+                                </button>
+                                <span class="ms-3 text-muted">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Minimal 1 barang diperlukan untuk mengupdate permintaan
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <!-- Daftar Barang yang Dipilih (CART) -->
+                        <div class="card mb-4" id="edit_cartCard">
+                            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-cart me-2"></i>Daftar Barang yang Diminta
+                                </h6>
+                                <span class="badge bg-primary" id="edit_cartCount">{{ $permintaan->details->count() ?? 1 }} item</span>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-hover mb-0 cart-table" id="edit_cartTable">
+                                        <thead>
+                                            <tr>
+                                                <th width="5%">#</th>
+                                                <th width="15%">Kode Barang</th>
+                                                <th width="25%">Nama Barang</th>
+                                                <th width="15%">Kategori</th>
+                                                <th width="15%">Satuan</th>
+                                                <th width="15%">Jumlah</th>
+                                                <th width="10%">Stok</th>
+                                                <th width="5%">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="edit_cartItems">
+    <!-- Items akan diisi oleh JavaScript -->
+    @if(isset($permintaan->details) && $permintaan->details->count() > 0)
+        @foreach($permintaan->details as $index => $detail)
+        @php
+            $barang = $detail->barang;
+        @endphp
+        <tr data-id="{{ $barang->id }}" data-index="{{ $index }}">
+            <td>{{ $loop->iteration }}</td>
+            <td>{{ $barang->kode_barang }}</td>
+            <td>
+                <strong>{{ $barang->nama_barang }}</strong>
+            </td>
+            <td>{{ $barang->kategori->nama_kategori ?? '-' }}</td>
+            <td>{{ $barang->satuan->nama_satuan ?? 'unit' }}</td>
+            <td>
+                <div class="input-group input-group-sm cart-quantity-control">
+                    <button class="btn btn-outline-secondary btn-minus" type="button" 
+                            data-id="{{ $barang->id }}" data-index="{{ $index }}">
+                        <i class="bi bi-dash"></i>
+                    </button>
+                    <input type="number" class="form-control text-center jumlah-input" 
+                           value="{{ $detail->jumlah }}" min="1" 
+                           data-id="{{ $barang->id }}" data-index="{{ $index }}"
+                           data-stok="{{ $barang->stok }}">
+                    <button class="btn btn-outline-secondary btn-plus" type="button" 
+                            data-id="{{ $barang->id }}" data-index="{{ $index }}">
+                        <i class="bi bi-plus"></i>
+                    </button>
+                </div>
+            </td>
+            <td>
+                @php
+                    $stok = $barang->stok ?? 0;
+                    $badgeClass = ($stok > 10) ? 'bg-success' : (($stok > 0) ? 'bg-warning' : 'bg-danger');
+                @endphp
+                <span class="badge {{ $badgeClass }} stok-badge" 
+                      data-id="{{ $barang->id }}" 
+                      data-satuan="{{ $barang->satuan->nama_satuan ?? 'unit' }}">
+                    {{ $stok }} {{ $barang->satuan->nama_satuan ?? 'unit' }}
+                </span>
+            </td>
+            <td>
+                <button class="btn btn-sm btn-danger btn-hapus" 
+                        data-id="{{ $barang->id }}" data-index="{{ $index }}" title="Hapus">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>
+        @endforeach
+    @else
+        <!-- Fallback untuk permintaan lama (single barang) -->
+        @php
+            $barang = $permintaan->barang;
+        @endphp
+        <tr data-id="{{ $barang->id }}" data-index="0">
+            <td>1</td>
+            <td>{{ $barang->kode_barang }}</td>
+            <td>
+                <strong>{{ $barang->nama_barang }}</strong>
+            </td>
+            <td>{{ $barang->kategori->nama_kategori ?? '-' }}</td>
+            <td>{{ $barang->satuan->nama_satuan ?? 'unit' }}</td>
+            <td>
+                <div class="input-group input-group-sm cart-quantity-control">
+                    <button class="btn btn-outline-secondary btn-minus" type="button" 
+                            data-id="{{ $barang->id }}" data-index="0">
+                        <i class="bi bi-dash"></i>
+                    </button>
+                    <input type="number" class="form-control text-center jumlah-input" 
+                           value="{{ $permintaan->jumlah }}" min="1" 
+                           data-id="{{ $barang->id }}" data-index="0"
+                           data-stok="{{ $barang->stok }}">
+                    <button class="btn btn-outline-secondary btn-plus" type="button" 
+                            data-id="{{ $barang->id }}" data-index="0">
+                        <i class="bi bi-plus"></i>
+                    </button>
+                </div>
+            </td>
+            <td>
+                @php
+                    $stok = $barang->stok ?? 0;
+                    $badgeClass = ($stok > 10) ? 'bg-success' : (($stok > 0) ? 'bg-warning' : 'bg-danger');
+                @endphp
+                <span class="badge {{ $badgeClass }} stok-badge" 
+                      data-id="{{ $barang->id }}" 
+                      data-satuan="{{ $barang->satuan->nama_satuan ?? 'unit' }}">
+                    {{ $stok }} {{ $barang->satuan->nama_satuan ?? 'unit' }}
+                </span>
+            </td>
+            <td>
+                <button class="btn btn-sm btn-danger btn-hapus" 
+                        data-id="{{ $barang->id }}" data-index="0" title="Hapus">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>
+    @endif
+</tbody>   
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="card-footer bg-light">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>Total Barang: <span id="edit_totalItems">{{ $permintaan->details->count() > 0 ? $permintaan->details->count() : 1 }}</span> jenis</strong>
                                     </div>
-                                    <div class="col-md-4">
-                                        <p class="mb-1"><strong>Nama Barang:</strong></p>
-                                        <p>{{ $permintaan->barang->nama_barang ?? '-' }}</p>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <p class="mb-1"><strong>Kategori:</strong></p>
-                                        <p>{{ $permintaan->barang->kategori->nama_kategori ?? '-' }}</p>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <p class="mb-1"><strong>Stok Tersedia:</strong></p>
-                                        <p>{{ $permintaan->barang->stok ?? '0' }} {{ $permintaan->barang->satuan->nama_satuan ?? 'unit' }}</p>
+                                    <div>
+                                        <strong>Total Jumlah: <span id="edit_totalQuantity">{{ $permintaan->details->sum('jumlah') ?? $permintaan->jumlah }}</span> unit</strong>
                                     </div>
                                 </div>
                             </div>
                         </div>
                         
-                        <!-- Detail Permintaan -->
-                        <div class="row g-3">
-                            <input type="hidden" name="barang_id" value="{{ $permintaan->barang_id }}">
-                            
-                            <div class="col-md-6">
-                                <label for="edit_jumlah" class="form-label">
-                                    Jumlah yang Diminta
-                                    <span class="text-danger">*</span>
-                                </label>
-                                <div class="input-group">
-                                    <input type="number" 
-                                           name="jumlah" 
-                                           class="form-control" 
-                                           id="edit_jumlah"
-                                           value="{{ $permintaan->jumlah }}"
-                                           min="1" 
-                                           required>
-                                    <span class="input-group-text">
-                                        {{ $permintaan->barang->satuan->nama_satuan ?? 'unit' }}
-                                    </span>
-                                </div>
-                                <div class="invalid-feedback" id="edit_jumlah_error"></div>
-                            </div>
-                            
+                        <!-- Informasi Satker dan Tanggal -->
+                        <div class="row g-3 mt-4">
                             <div class="col-md-6">
                                 <label for="edit_satker_id" class="form-label">
                                     Satuan Kerja
@@ -571,6 +737,7 @@
                                         @endforeach
                                     @endif
                                 </select>
+                                <div class="form-text">Pilih satuan kerja yang membutuhkan barang</div>
                             </div>
                             
                             <div class="col-md-6">
@@ -582,25 +749,43 @@
                                        name="tanggal_dibutuhkan" 
                                        class="form-control" 
                                        id="edit_tanggal_dibutuhkan"
-                                       value="{{ $permintaan->tanggal_dibutuhkan ?? date('Y-m-d') }}"
+                                       value="{{ $permintaan->tanggal_dibutuhkan ? \Carbon\Carbon::parse($permintaan->tanggal_dibutuhkan)->format('Y-m-d') : date('Y-m-d') }}"
                                        required>
+                                <div class="form-text">Tanggal paling lambat barang dibutuhkan</div>
                             </div>
                             
                             <div class="col-12">
                                 <label for="edit_keterangan" class="form-label">
-                                    Keterangan
+                                    Keterangan / Alasan Permintaan
                                     <span class="text-danger">*</span>
                                 </label>
                                 <textarea class="form-control" id="edit_keterangan" name="keterangan" 
-                                          rows="4" required>{{ $permintaan->keterangan }}</textarea>
+                                          rows="4" placeholder="Jelaskan alasan dan kebutuhan barang ini..." 
+                                          required>{{ $permintaan->keterangan }}</textarea>
+                                <div class="form-text">Contoh: Untuk keperluan rapat rutin, penggantian alat rusak, dll.</div>
                             </div>
+                        </div>
+                        
+                        <!-- Hidden input untuk data barang -->
+                        <div id="edit_barangDataContainer">
+                            <!-- Data barang akan disimpan sebagai input hidden -->
+                            @if(isset($permintaan->details) && $permintaan->details->count() > 0)
+                                @foreach($permintaan->details as $index => $detail)
+                                <input type="hidden" name="barang_items[{{ $index }}][barang_id]" value="{{ $detail->barang_id }}">
+                                <input type="hidden" name="barang_items[{{ $index }}][jumlah]" value="{{ $detail->jumlah }}">
+                                @endforeach
+                            @else
+                                <!-- Fallback untuk permintaan lama -->
+                                <input type="hidden" name="barang_items[0][barang_id]" value="{{ $permintaan->barang_id }}">
+                                <input type="hidden" name="barang_items[0][jumlah]" value="{{ $permintaan->jumlah }}">
+                            @endif
                         </div>
                         
                         <div class="d-flex justify-content-between mt-4">
                             <a href="{{ route('user.permintaan') }}" class="btn btn-secondary">
                                 <i class="bi bi-arrow-left me-1"></i>Batal
                             </a>
-                            <button type="submit" class="btn btn-primary">
+                            <button type="submit" class="btn btn-primary" id="edit_submitBtn">
                                 <i class="bi bi-check-circle me-1"></i>Simpan Perubahan
                             </button>
                         </div>
@@ -665,7 +850,7 @@
                             
                             @if($permintaan->approved_by && $permintaan->approved_at)
                             <div class="mt-3">
-                                <p class="mb-1"><strong>Disetujui/Oleh:</strong></p>
+                                <p class="mb-1"><strong>Disetujui Oleh:</strong></p>
                                 <p class="mb-0">{{ $permintaan->approvedBy->name ?? 'Admin' }}<br>
                                 <small>{{ \Carbon\Carbon::parse($permintaan->approved_at)->format('d/m/Y H:i') }}</small></p>
                             </div>
@@ -720,8 +905,13 @@
                                                 <span class="badge bg-primary">{{ $jumlah }}</span>
                                             </td>
                                             <td>
-                                                <span class="badge {{ ($barang->stok ?? 0) >= $jumlah ? 'bg-success' : 'bg-warning' }}">
-                                                    {{ $barang->stok ?? 0 }}
+                                                @php
+                                                    $stok = $barang->stok ?? 0;
+                                                    $isEnough = $stok >= $jumlah;
+                                                    $badgeClass = $isEnough ? 'bg-success' : 'bg-warning';
+                                                @endphp
+                                                <span class="badge {{ $badgeClass }}">
+                                                    {{ $stok }}
                                                 </span>
                                             </td>
                                         </tr>
@@ -1211,6 +1401,16 @@
                     
                     // Tambah setiap item ke tabel
                     cartItems.forEach((item, index) => {
+                        // Tentukan badge class berdasarkan stok
+                        let badgeClass;
+                        if (item.stok > 10) {
+                            badgeClass = 'bg-success';
+                        } else if (item.stok > 0) {
+                            badgeClass = 'bg-warning';
+                        } else {
+                            badgeClass = 'bg-danger';
+                        }
+                        
                         const row = `
                             <tr data-id="${item.id}" data-index="${index}">
                                 <td>${index + 1}</td>
@@ -1236,7 +1436,7 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <span class="badge ${item.stok > 10 ? 'bg-success' : item.stok > 0 ? 'bg-warning' : 'bg-danger'}">
+                                    <span class="badge ${badgeClass}">
                                         ${item.stok} ${item.satuan}
                                     </span>
                                 </td>
@@ -1271,8 +1471,6 @@
                 const id = $(this).data('id');
                 const index = $(this).data('index');
                 
-                console.log('Plus clicked:', { id, index, cartItems });
-                
                 if (index !== undefined && cartItems[index]) {
                     const item = cartItems[index];
                     
@@ -1292,8 +1490,6 @@
                 const id = $(this).data('id');
                 const index = $(this).data('index');
                 
-                console.log('Minus clicked:', { id, index, cartItems });
-                
                 if (index !== undefined && cartItems[index]) {
                     const item = cartItems[index];
                     
@@ -1308,8 +1504,6 @@
                 const id = $(this).data('id');
                 const index = $(this).data('index');
                 const newJumlah = parseInt($(this).val()) || 1;
-                
-                console.log('Input changed:', { id, index, newJumlah, cartItems });
                 
                 if (index !== undefined && cartItems[index]) {
                     const item = cartItems[index];
@@ -1334,8 +1528,6 @@
                 
                 const id = $(this).data('id');
                 const index = $(this).data('index');
-                
-                console.log('Delete clicked:', { id, index, cartItems });
                 
                 if (index !== undefined && cartItems[index]) {
                     // Konfirmasi sebelum menghapus
@@ -1464,43 +1656,580 @@
         }
         
         // ==============================================
-        // VALIDASI UNTUK EDIT FORM (MASIH SATU BARANG)
-        // ==============================================
-        if ($('#editPermintaanForm').length) {
-            const today = new Date().toISOString().split('T')[0];
-            $('#edit_tanggal_dibutuhkan').attr('min', today);
+// SISTEM KASIR UNTUK EDIT MULTI BARANG (DENGAN STOK REAL-TIME)
+// ==============================================
+if ($('#edit_barang_search').length) {
+    // Inisialisasi variabel dengan data dari server
+    let editCartItems = [];
+    let editSelectedBarang = null;
+    
+    // Initialize Select2 for barang search
+    $('#edit_barang_search').select2({
+        placeholder: "Ketik untuk mencari barang...",
+        allowClear: true,
+        width: '100%',
+        templateResult: formatBarangResult,
+        templateSelection: formatBarangSelection
+    });
+    
+    // Fungsi untuk update stok dari server
+     function updateStokFromServer(barangId) {
+        return new Promise((resolve, reject) => {
+            // Perbaiki URL dengan cara yang benar
+            const url = '{{ route("user.permintaan.barang.stok", ":id") }}'.replace(':id', barangId);
             
-            $('#editPermintaanForm').submit(function(e) {
-                const jumlah = parseInt($('#edit_jumlah').val()) || 0;
-                const keterangan = $('#edit_keterangan').val().trim();
-                const tanggalDibutuhkan = $('#edit_tanggal_dibutuhkan').val();
-                const satkerId = $('#edit_satker_id').val();
-                
-                if (tanggalDibutuhkan < today) {
-                    e.preventDefault();
-                    alert('Tanggal dibutuhkan tidak boleh kurang dari hari ini');
-                    return false;
-                }
-                
-                if (jumlah < 1) {
-                    e.preventDefault();
-                    alert('Jumlah minimal 1');
-                    return false;
-                }
-                
-                if (!satkerId) {
-                    e.preventDefault();
-                    alert('Harap pilih satuan kerja');
-                    return false;
-                }
-                
-                if (!keterangan) {
-                    e.preventDefault();
-                    alert('Harap isi keterangan kebutuhan barang');
-                    return false;
+            $.ajax({
+                url: url,
+                type: 'GET',
+                dataType: 'json',
+                headers: {
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                success: function(response) {
+                    if (response.success) {
+                        resolve(response);
+                    } else {
+                        reject(response.message);
+                    }
+                },
+                error: function(xhr) {
+                    console.error('Error fetching stock:', xhr);
+                    reject('Gagal mengambil data stok dari server');
                 }
             });
+        });
+    }
+    
+    // Initialize Select2 for barang search
+    $('#edit_barang_search').select2({
+        placeholder: "Ketik untuk mencari barang...",
+        allowClear: true,
+        width: '100%',
+        templateResult: formatBarangResult,
+        templateSelection: formatBarangSelection
+    });
+    
+    // ... kode lainnya TETAP DI SINI ...
+    // Load existing items from table to cart array
+    $('#edit_cartItems tr').each(function(index) {
+        // ... kode load existing items ...
+    });
+    
+    // Fungsi untuk update badge stok
+    function updateStokBadge(barangId, newStok, satuan) {
+        const badge = $(`.stok-badge[data-id="${barangId}"]`);
+        const input = $(`input[data-id="${barangId}"]`);
+        
+        if (badge.length) {
+            // Update badge
+            let badgeClass = 'bg-success';
+            if (newStok <= 0) {
+                badgeClass = 'bg-danger';
+            } else if (newStok <= 5) {
+                badgeClass = 'bg-warning';
+            }
+            
+            badge.removeClass('bg-success bg-warning bg-danger').addClass(badgeClass);
+            badge.text(newStok + ' ' + satuan);
+            
+            // Update max attribute pada input
+            if (input.length) {
+                input.attr('max', newStok);
+            }
+            
+            // Update stok di cartItems array
+            const itemIndex = editCartItems.findIndex(item => item.id == barangId);
+            if (itemIndex !== -1) {
+                editCartItems[itemIndex].stok = newStok;
+            }
         }
+        
+        return newStok;
+    }
+    
+    // Load existing items from table to cart array
+    $('#edit_cartItems tr').each(function(index) {
+        const row = $(this);
+        const barangId = row.data('id');
+        const barangKode = row.find('td:eq(1)').text();
+        const barangNama = row.find('td:eq(2) strong').text();
+        const barangKategori = row.find('td:eq(3)').text();
+        const barangSatuan = row.find('td:eq(4)').text();
+        const barangJumlah = parseInt(row.find('.jumlah-input').val()) || 1;
+        
+        // Get initial stok from data attribute
+        const barangStok = parseInt(row.find('.stok-badge').text().split(' ')[0]) || 0;
+        
+        editCartItems.push({
+            id: barangId,
+            kode: barangKode,
+            nama: barangNama,
+            kategori: barangKategori,
+            satuan: barangSatuan,
+            stok: barangStok,
+            jumlah: barangJumlah
+        });
+    });
+    
+    // Event when barang is selected
+    $('#edit_barang_search').on('change', function() {
+        const selectedOption = $(this).find('option:selected');
+        const barangId = selectedOption.val();
+        
+        if (barangId) {
+            // Cek apakah barang sudah ada di cart
+            const existingItem = editCartItems.find(item => item.id == barangId);
+            if (existingItem) {
+                alert('Barang ini sudah ada di daftar permintaan!');
+                $(this).val(null).trigger('change');
+                return;
+            }
+            
+            // Get data from data attributes
+            const stok = parseInt(selectedOption.data('stok')) || 0;
+            const kode = selectedOption.data('kode');
+            const nama = selectedOption.data('nama');
+            const satuan = selectedOption.data('satuan');
+            const kategori = selectedOption.data('kategori');
+            
+            // Simpan data barang yang dipilih
+            editSelectedBarang = {
+                id: barangId,
+                kode: kode,
+                nama: nama,
+                stok: stok,
+                satuan: satuan,
+                kategori: kategori,
+                jumlah: 1 // Default jumlah 1
+            };
+            
+            // Ambil stok real-time dari server
+            updateStokFromServer(barangId)
+                .then(response => {
+                    editSelectedBarang.stok = response.stok;
+                    
+                    // Tampilkan quick preview dengan stok terbaru
+                    $('#edit_previewKode').text(kode);
+                    $('#edit_previewNama').text(nama);
+                    $('#edit_previewStok').text(response.stok);
+                    $('#edit_previewSatuan').text(response.satuan);
+                    $('#edit_quickPreview').show();
+                    
+                    // Enable tombol tambah
+                    $('#edit_btnTambahBarang').prop('disabled', false);
+                })
+                .catch(error => {
+                    console.error('Error fetching stock:', error);
+                    // Fallback ke stok dari data attribute
+                    $('#edit_previewKode').text(kode);
+                    $('#edit_previewNama').text(nama);
+                    $('#edit_previewStok').text(stok);
+                    $('#edit_previewSatuan').text(satuan);
+                    $('#edit_quickPreview').show();
+                    $('#edit_btnTambahBarang').prop('disabled', false);
+                });
+        } else {
+            editSelectedBarang = null;
+            $('#edit_btnTambahBarang').prop('disabled', true);
+            $('#edit_quickPreview').hide();
+        }
+    });
+    
+    // Tombol Tambah Barang ke Cart
+    $('#edit_btnTambahBarang').click(function() {
+        if (!editSelectedBarang) return;
+        
+        // Cek apakah barang sudah ada di cart
+        const existingIndex = editCartItems.findIndex(item => item.id === editSelectedBarang.id);
+        
+        if (existingIndex !== -1) {
+            // Jika sudah ada, tambah jumlah
+            if (editCartItems[existingIndex].jumlah < editSelectedBarang.stok) {
+                editCartItems[existingIndex].jumlah += 1;
+            } else {
+                alert('Jumlah melebihi stok tersedia (' + editSelectedBarang.stok + ' ' + editSelectedBarang.satuan + ')!');
+                return;
+            }
+        } else {
+            // Jika belum ada, tambah baru
+            editCartItems.push({
+                ...editSelectedBarang,
+                jumlah: 1
+            });
+        }
+        
+        // Refresh tampilan cart
+        refreshEditCart();
+        
+        // Reset select
+        $('#edit_barang_search').val(null).trigger('change');
+        editSelectedBarang = null;
+        $('#edit_btnTambahBarang').prop('disabled', true);
+        $('#edit_quickPreview').hide();
+    });
+    
+    // Tombol Kosongkan Daftar
+    $('#edit_btnKosongkanDaftar').click(function() {
+        if (editCartItems.length === 0) {
+            alert('Daftar barang sudah kosong!');
+            return;
+        }
+        
+        if (confirm('Apakah Anda yakin ingin mengosongkan semua barang dari daftar?')) {
+            editCartItems = [];
+            refreshEditCart();
+        }
+    });
+    
+    // Fungsi refresh cart edit
+    function refreshEditCart() {
+        const cartTable = $('#edit_cartItems');
+        const cartCount = $('#edit_cartCount');
+        const totalItems = $('#edit_totalItems');
+        const totalQuantity = $('#edit_totalQuantity');
+        const cartCard = $('#edit_cartCard');
+        const container = $('#edit_barangDataContainer');
+        
+        // Kosongkan tabel
+        cartTable.empty();
+        
+        // Hitung total
+        const totalJenis = editCartItems.length;
+        const totalJumlah = editCartItems.reduce((sum, item) => sum + item.jumlah, 0);
+        
+        // Update totals
+        totalItems.text(totalJenis);
+        totalQuantity.text(totalJumlah);
+        
+        if (editCartItems.length > 0) {
+            // Tampilkan cart card
+            cartCard.show();
+            cartCount.text(totalJenis + ' item');
+            
+            // Update hidden inputs
+            container.empty();
+            
+            // Update stok semua barang dari server sebelum menampilkan
+            const updatePromises = editCartItems.map((item, index) => {
+                return updateStokFromServer(item.id)
+                    .then(response => {
+                        // Update stok di item
+                        editCartItems[index].stok = response.stok;
+                        editCartItems[index].satuan = response.satuan;
+                        
+                        // Tentukan badge class berdasarkan stok
+                        let badgeClass;
+                        if (response.stok > 10) {
+                            badgeClass = 'bg-success';
+                        } else if (response.stok > 0) {
+                            badgeClass = 'bg-warning';
+                        } else {
+                            badgeClass = 'bg-danger';
+                        }
+                        
+                        // Buat row untuk item
+                        const row = `
+                            <tr data-id="${item.id}" data-index="${index}">
+                                <td>${index + 1}</td>
+                                <td>${item.kode}</td>
+                                <td>
+                                    <strong>${item.nama}</strong>
+                                </td>
+                                <td>${item.kategori}</td>
+                                <td>${response.satuan}</td>
+                                <td>
+                                    <div class="input-group input-group-sm cart-quantity-control">
+                                        <button class="btn btn-outline-secondary btn-minus" type="button" 
+                                                data-id="${item.id}" data-index="${index}">
+                                            <i class="bi bi-dash"></i>
+                                        </button>
+                                        <input type="number" class="form-control text-center jumlah-input" 
+                                               value="${item.jumlah}" min="1" max="${response.stok}" 
+                                               data-id="${item.id}" data-index="${index}"
+                                               data-stok="${response.stok}">
+                                        <button class="btn btn-outline-secondary btn-plus" type="button" 
+                                                data-id="${item.id}" data-index="${index}">
+                                            <i class="bi bi-plus"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="badge ${badgeClass} stok-badge" 
+                                          data-id="${item.id}" 
+                                          data-satuan="${response.satuan}">
+                                        ${response.stok} ${response.satuan}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-danger btn-hapus" 
+                                            data-id="${item.id}" data-index="${index}" title="Hapus">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                        cartTable.append(row);
+                        
+                        // Tambah hidden input
+                        container.append(`
+                            <input type="hidden" name="barang_items[${index}][barang_id]" value="${item.id}">
+                            <input type="hidden" name="barang_items[${index}][jumlah]" value="${item.jumlah}">
+                        `);
+                    })
+                    .catch(error => {
+                        console.error(`Error updating stock for item ${item.id}:`, error);
+                        // Fallback ke stok lama
+                        let badgeClass;
+                        if (item.stok > 10) {
+                            badgeClass = 'bg-success';
+                        } else if (item.stok > 0) {
+                            badgeClass = 'bg-warning';
+                        } else {
+                            badgeClass = 'bg-danger';
+                        }
+                        
+                        const row = `
+                            <tr data-id="${item.id}" data-index="${index}">
+                                <td>${index + 1}</td>
+                                <td>${item.kode}</td>
+                                <td>
+                                    <strong>${item.nama}</strong>
+                                </td>
+                                <td>${item.kategori}</td>
+                                <td>${item.satuan}</td>
+                                <td>
+                                    <div class="input-group input-group-sm cart-quantity-control">
+                                        <button class="btn btn-outline-secondary btn-minus" type="button" 
+                                                data-id="${item.id}" data-index="${index}">
+                                            <i class="bi bi-dash"></i>
+                                        </button>
+                                        <input type="number" class="form-control text-center jumlah-input" 
+                                               value="${item.jumlah}" min="1" max="${item.stok}" 
+                                               data-id="${item.id}" data-index="${index}"
+                                               data-stok="${item.stok}">
+                                        <button class="btn btn-outline-secondary btn-plus" type="button" 
+                                                data-id="${item.id}" data-index="${index}">
+                                            <i class="bi bi-plus"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="badge ${badgeClass} stok-badge" 
+                                          data-id="${item.id}" 
+                                          data-satuan="${item.satuan}">
+                                        ${item.stok} ${item.satuan}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-danger btn-hapus" 
+                                            data-id="${item.id}" data-index="${index}" title="Hapus">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                        cartTable.append(row);
+                        
+                        // Tambah hidden input
+                        container.append(`
+                            <input type="hidden" name="barang_items[${index}][barang_id]" value="${item.id}">
+                            <input type="hidden" name="barang_items[${index}][jumlah]" value="${item.jumlah}">
+                        `);
+                    });
+            });
+            
+            // Tunggu semua update selesai
+            Promise.all(updatePromises).then(() => {
+                console.log('All stock updates completed');
+            });
+        } else {
+            // Sembunyikan cart card
+            cartCard.hide();
+            cartCount.text('0 item');
+            
+            // Kosongkan hidden inputs
+            container.empty();
+        }
+    }
+    
+    // Event delegation untuk button di cart edit
+    $(document).on('click', '#edit_cartTable .btn-plus', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const id = $(this).data('id');
+        const index = $(this).data('index');
+        
+        if (index !== undefined && editCartItems[index]) {
+            const item = editCartItems[index];
+            
+            // Ambil stok terbaru dari server
+            updateStokFromServer(id)
+                .then(response => {
+                    const currentStok = response.stok;
+                    
+                    if (item.jumlah < currentStok) {
+                        item.jumlah++;
+                        // Update stok di array
+                        editCartItems[index].stok = currentStok;
+                        refreshEditCart();
+                    } else {
+                        alert('Jumlah melebihi stok tersedia (' + currentStok + ' ' + response.satuan + ')!');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking stock:', error);
+                    // Fallback ke stok yang ada
+                    if (item.jumlah < item.stok) {
+                        item.jumlah++;
+                        refreshEditCart();
+                    } else {
+                        alert('Jumlah melebihi stok tersedia (' + item.stok + ' ' + item.satuan + ')!');
+                    }
+                });
+        }
+    });
+    
+    $(document).on('click', '#edit_cartTable .btn-minus', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const id = $(this).data('id');
+        const index = $(this).data('index');
+        
+        if (index !== undefined && editCartItems[index]) {
+            const item = editCartItems[index];
+            
+            if (item.jumlah > 1) {
+                item.jumlah--;
+                refreshEditCart();
+            }
+        }
+    });
+    
+    $(document).on('input', '#edit_cartTable .jumlah-input', function() {
+        const id = $(this).data('id');
+        const index = $(this).data('index');
+        const newJumlah = parseInt($(this).val()) || 1;
+        
+        if (index !== undefined && editCartItems[index]) {
+            const item = editCartItems[index];
+            
+            // Ambil stok terbaru dari server
+            updateStokFromServer(id)
+                .then(response => {
+                    const currentStok = response.stok;
+                    
+                    if (newJumlah > currentStok) {
+                        alert('Jumlah melebihi stok tersedia (' + currentStok + ' ' + response.satuan + ')!');
+                        $(this).val(item.jumlah);
+                    } else if (newJumlah < 1) {
+                        $(this).val(1);
+                        item.jumlah = 1;
+                        refreshEditCart();
+                    } else {
+                        item.jumlah = newJumlah;
+                        editCartItems[index].stok = currentStok;
+                        refreshEditCart();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking stock:', error);
+                    // Fallback ke stok yang ada
+                    if (newJumlah > item.stok) {
+                        alert('Jumlah melebihi stok tersedia (' + item.stok + ' ' + item.satuan + ')!');
+                        $(this).val(item.jumlah);
+                    } else if (newJumlah < 1) {
+                        $(this).val(1);
+                        item.jumlah = 1;
+                        refreshEditCart();
+                    } else {
+                        item.jumlah = newJumlah;
+                        refreshEditCart();
+                    }
+                });
+        }
+    });
+    
+    $(document).on('click', '#edit_cartTable .btn-hapus', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const id = $(this).data('id');
+        const index = $(this).data('index');
+        
+        if (index !== undefined && editCartItems[index]) {
+            // Konfirmasi sebelum menghapus
+            if (confirm('Apakah Anda yakin ingin menghapus barang ini dari daftar?')) {
+                editCartItems.splice(index, 1);
+                refreshEditCart();
+            }
+        }
+    });
+    
+    // Form validation before submit - DENGAN STOK REAL-TIME
+    $('#editPermintaanForm').submit(function(e) {
+        e.preventDefault();
+        
+        if (editCartItems.length === 0) {
+            alert('Harap tambahkan minimal 1 barang ke daftar permintaan');
+            return false;
+        }
+        
+        const satkerId = $('#edit_satker_id').val();
+        const keterangan = $('#edit_keterangan').val().trim();
+        const tanggalDibutuhkan = $('#edit_tanggal_dibutuhkan').val();
+        const today = new Date().toISOString().split('T')[0];
+        
+        if (tanggalDibutuhkan < today) {
+            alert('Tanggal dibutuhkan tidak boleh kurang dari hari ini');
+            return false;
+        }
+        
+        if (!satkerId) {
+            alert('Harap pilih satuan kerja');
+            return false;
+        }
+        
+        if (!keterangan) {
+            alert('Harap isi keterangan kebutuhan barang');
+            return false;
+        }
+        
+        // Validasi stok real-time untuk setiap barang
+        const validationPromises = editCartItems.map((item, index) => {
+            return updateStokFromServer(item.id)
+                .then(response => {
+                    if (item.jumlah > response.stok) {
+                        throw new Error(`Jumlah barang "${item.nama}" melebihi stok tersedia (${response.stok} ${response.satuan})`);
+                    }
+                    return true;
+                })
+                .catch(error => {
+                    throw error;
+                });
+        });
+        
+        // Tampilkan loading
+        $('#edit_submitBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Memvalidasi...');
+        
+        // Jalankan semua validasi
+        Promise.all(validationPromises)
+            .then(() => {
+                // Semua validasi berhasil, submit form
+                $(this).off('submit').submit();
+            })
+            .catch(error => {
+                // Ada error validasi
+                $('#edit_submitBtn').prop('disabled', false).html('<i class="bi bi-check-circle me-1"></i>Simpan Perubahan');
+                alert(error.message);
+            });
+    });
+    
+    // Set minimum date for tanggal dibutuhkan
+    const today = new Date().toISOString().split('T')[0];
+    $('#edit_tanggal_dibutuhkan').attr('min', today);
+}
     });
 </script>
 </body>

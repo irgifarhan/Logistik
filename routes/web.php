@@ -81,6 +81,8 @@ Route::middleware(['auth', 'check.maintenance'])->group(function () {
             Route::delete('/{id}', [PermintaanUserController::class, 'destroy'])->name('user.permintaan.destroy');
             Route::get('/track/{kode_permintaan}', [PermintaanUserController::class, 'track'])->name('user.permintaan.track');
             Route::get('/cetak/print', [PermintaanUserController::class, 'cetak'])->name('user.permintaan.cetak');
+            Route::get('/barang/{id}/stok', [PermintaanUserController::class, 'getStokBarang'])
+            ->name('user.permintaan.barang.stok');
         });
     });
 

@@ -15,7 +15,7 @@
             --success: #10b981;
             --warning: #f59e0b;
             --info: #0ea5e9;
-            --delivered-color: #8b5cf6; /* Warna baru untuk status terkirim */
+            --delivered-color: #8b5cf6;
             --dark: #1e293b;
             --light: #f8fafc;
             --sidebar-width: 250px;
@@ -257,26 +257,6 @@
             font-weight: 500;
         }
         
-        .badge-pending {
-            background-color: #fef3c7;
-            color: #92400e;
-        }
-        
-        .badge-approved {
-            background-color: #d1fae5;
-            color: #065f46;
-        }
-        
-        .badge-delivered {
-            background-color: var(--delivered-color); /* Menggunakan warna #8b5cf6 */
-            color: white;
-        }
-        
-        .badge-rejected {
-            background-color: #fee2e2;
-            color: #991b1b;
-        }
-        
         /* Quick Actions */
         .quick-actions {
             display: grid;
@@ -322,6 +302,30 @@
             width: 1rem;
             height: 1rem;
             margin-right: 0.5rem;
+        }
+        
+        /* Detail Barang (Multi Barang) */
+        .detail-item {
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 3px solid #3b82f6;
+            font-size: 0.875rem;
+        }
+        
+        .detail-item .badge {
+            font-size: 0.75em;
+        }
+        
+        .multi-item-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #e2e8f0;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
         }
         
         /* Responsive */
@@ -510,6 +514,26 @@
                     <p>Permintaan Terkirim</p>
                 </div>
             </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon" style="background-color: #d1fae5; color: #10b981;">
+                    <i class="bi bi-check-circle"></i>
+                </div>
+                <div class="stat-content">
+                    <h3>{{ $data['total_permintaan'] ?? 0 }}</h3>
+                    <p>Total Permintaan</p>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon" style="background-color: #fee2e2; color: #ef4444;">
+                    <i class="bi bi-x-circle"></i>
+                </div>
+                <div class="stat-content">
+                    <h3>{{ $data['permintaan_ditolak'] ?? 0 }}</h3>
+                    <p>Permintaan Ditolak</p>
+                </div>
+            </div>
         </div>
         
         <!-- Charts Section -->
@@ -540,65 +564,98 @@
             </div>
         </div>
         
-        <!-- Recent Requests Table -->
+        <!-- Recent Requests Table - SUPPORT MULTI BARANG -->
         <div class="table-card">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="mb-0">Permintaan Terbaru</h5>
-                <a href="{{ route('admin.requests') }}" class="btn btn-sm btn-primary">Lihat Semua</a>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Kode Permintaan</th>
-                            <th>Pemohon</th>
-                            <th>Barang</th>
-                            <th>Jumlah</th>
-                            <th>Satker</th>
-                            <th>Status</th>
-                            <th>Tanggal</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse(($data['recent_requests'] ?? collect()) as $request)
-                        <tr>
-                            <td>{{ $loop->iteration }}</td>
-                            <td><strong>{{ $request->kode_permintaan ?? 'PMT-' . str_pad($request->id, 6, '0', STR_PAD_LEFT) }}</strong></td>
-                            <td>{{ $request->user->name ?? 'N/A' }}</td>
-                            <td>{{ $request->barang->nama_barang ?? 'N/A' }}</td>
-                            <td>{{ $request->jumlah ?? 0 }}</td>
-                            <td>{{ $request->satker->nama_satker ?? 'N/A' }}</td>
-                            <td>
-                                @php
-                                    $status = $request->status ?? 'pending';
-                                @endphp
-                                @if($status == 'pending')
-                                    <span class="badge badge-pending">Pending</span>
-                                @elseif($status == 'approved')
-                                    <span class="badge badge-approved">Disetujui</span>
-                                @elseif($status == 'delivered')
-                                    <span class="badge badge-delivered">Terkirim</span>
-                                @elseif($status == 'rejected')
-                                    <span class="badge badge-rejected">Ditolak</span>
-                                @else
-                                    <span class="badge badge-secondary">{{ ucfirst($status) }}</span>
-                                @endif
-                            </td>
-                            <td>{{ $request->created_at->format('d/m/Y') ?? '-' }}</td>
-                        </tr>
-                        @empty
-                        <tr>
-                            <td colspan="9" class="text-center py-4">
-                                <i class="bi bi-inbox" style="font-size: 2rem; color: #cbd5e1;"></i>
-                                <p class="mt-2 text-muted">Belum ada permintaan barang</p>
-                            </td>
-                        </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-        </div>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">Permintaan Terbaru</h5>
+        <a href="{{ route('admin.requests') }}" class="btn btn-sm btn-primary">Lihat Semua</a>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Kode Permintaan</th>
+                    <th>Pemohon</th>
+                    <th>Barang</th>
+                    <th>Jumlah</th>
+                    <th>Satker</th>
+                    <th>Status</th>
+                    <th>Tanggal</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse(($data['recent_requests'] ?? collect()) as $request)
+                @php
+                    // Cek apakah multi barang atau single barang
+                    $isMultiBarang = isset($request->details) && $request->details->count() > 0;
+                    $totalJumlah = $isMultiBarang ? $request->details->sum('jumlah') : $request->jumlah;
+                    $barangCount = $isMultiBarang ? $request->details->count() : 1;
+                    $firstBarang = $isMultiBarang ? ($request->details->first()->barang ?? null) : $request->barang;
+                @endphp
+                <tr>
+                    <td>{{ $loop->iteration }}</td>
+                    <td>
+                        <span class="badge bg-light text-dark">{{ $request->kode_permintaan ?? 'PMT-' . str_pad($request->id, 6, '0', STR_PAD_LEFT) }}</span>
+                    </td>
+                    <td>{{ $request->user->name ?? 'N/A' }}</td>
+                    <td>
+                        @if($isMultiBarang)
+                            <strong>{{ $barangCount }} Jenis Barang</strong>
+                            <br>
+                            <small class="text-muted">
+                                @foreach($request->details as $index => $detail)
+                                    {{ $detail->barang->nama_barang ?? 'N/A' }}
+                                    @if(!$loop->last), @endif
+                                @endforeach
+                            </small>
+                        @else
+                            <strong>{{ $firstBarang->nama_barang ?? 'N/A' }}</strong>
+                            <br>
+                            <small class="text-muted">{{ $firstBarang->kode_barang ?? '' }}</small>
+                        @endif
+                    </td>
+                    <td>
+                        <span class="text-muted">{{ $totalJumlah }} unit</span>
+                        @if($isMultiBarang)
+                        <br>
+                        <small class="text-muted">{{ $barangCount }} jenis</small>
+                        @endif
+                    </td>
+                    <td>{{ $request->satker->nama_satker ?? 'N/A' }}</td>
+                    <td>
+                                        @if($request->status == 'pending')
+                                            <span class="badge bg-warning status-badge">
+                                                <i class="bi bi-clock-history me-1"></i>Pending
+                                            </span>
+                                        @elseif($request->status == 'approved')
+                                            <span class="badge bg-success status-badge">
+                                                <i class="bi bi-check-circle me-1"></i>Disetujui
+                                            </span>
+                                        @elseif($request->status == 'rejected')
+                                            <span class="badge bg-danger status-badge">
+                                                <i class="bi bi-x-circle me-1"></i>Ditolak
+                                            </span>
+                                        @elseif($request->status == 'delivered')
+                                            <span class="badge bg-info status-badge">
+                                                <i class="bi bi-truck me-1"></i>Dikirim
+                                            </span>
+                                        @endif
+                                    </td>
+                    <td>{{ $request->created_at->format('d/m/Y') ?? '-' }}</td>
+                </tr>
+                @empty
+                <tr>
+                    <td colspan="8" class="text-center py-4">
+                        <i class="bi bi-inbox" style="font-size: 2rem; color: #cbd5e1;"></i>
+                        <p class="mt-2 text-muted">Belum ada permintaan barang</p>
+                    </td>
+                </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+</div>
         
         <!-- Low Stock Items -->
         <div class="table-card">
@@ -680,6 +737,14 @@
                                 <small class="text-muted">Permintaan Bulan Ini</small>
                                 <p class="mb-1"><strong>{{ $data['permintaan_bulan_ini'] ?? 0 }}</strong></p>
                             </div>
+                            <div class="col-6">
+                                <small class="text-muted">Total Permintaan</small>
+                                <p class="mb-1"><strong>{{ $data['total_permintaan'] ?? 0 }}</strong></p>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">User Aktif</small>
+                                <p class="mb-1"><strong>{{ $data['total_users'] ?? 0 }}</strong></p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -730,20 +795,13 @@
         // Requests Chart
         const requestsCtx = document.getElementById('requestsChart').getContext('2d');
         
-        // Data untuk chart permintaan - sesuaikan dengan controller
+        // Data untuk chart permintaan
         const requestData = {
             pending: {{ $data['permintaan_pending'] ?? 0 }},
             approved: {{ $data['permintaan_disetujui'] ?? 0 }},
             delivered: {{ $data['permintaan_delivered'] ?? 0 }},
             rejected: {{ $data['permintaan_ditolak'] ?? 0 }}
         };
-        
-        // Jika data delivered tidak ada, hitung dari recent_requests
-        let deliveredCount = requestData.delivered;
-        if (deliveredCount === 0 && {{ isset($data['recent_requests']) && count($data['recent_requests']) > 0 ? 'true' : 'false' }}) {
-            const recentRequests = {!! json_encode($data['recent_requests'] ?? []) !!};
-            deliveredCount = recentRequests.filter(r => r.status === 'delivered').length;
-        }
         
         const requestsChart = new Chart(requestsCtx, {
             type: 'doughnut',
@@ -753,13 +811,13 @@
                     data: [
                         requestData.pending,
                         requestData.approved,
-                        deliveredCount,
+                        requestData.delivered,
                         requestData.rejected
                     ],
                     backgroundColor: [
                         '#fbbf24', // Pending - kuning
                         '#10b981', // Disetujui - hijau
-                        '#8b5cf6', // Terkirim - ungu (#8b5cf6)
+                        '#8b5cf6', // Terkirim - ungu
                         '#ef4444'  // Ditolak - merah
                     ],
                     borderWidth: 1,
@@ -793,11 +851,11 @@
             }
         });
         
-        // Initialize Inventory Chart dengan data dari database
+        // Initialize Inventory Chart
         function initInventoryChart() {
             const inventoryCtx = document.getElementById('inventoryChart').getContext('2d');
             
-            // Data dari controller dengan escape yang benar
+            // Data dari controller
             const chartData = {
                 labels: {!! json_encode($data['chart_months'] ?? ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']) !!},
                 datasets: [{
@@ -875,7 +933,7 @@
                     }
                 }
             });
-        }        
+        }
 
         // Load chart data via AJAX
         function loadInventoryChartData(year) {
@@ -948,32 +1006,6 @@
             return container;
         }
         
-        // Sidebar toggle for mobile
-        function toggleSidebar() {
-            const sidebar = document.querySelector('.sidebar');
-            const mainContent = document.querySelector('.main-content');
-            
-            if (sidebar.style.width === '70px') {
-                sidebar.style.width = '250px';
-                mainContent.style.marginLeft = '250px';
-            } else {
-                sidebar.style.width = '70px';
-                mainContent.style.marginLeft = '70px';
-            }
-        }
-        
-        // View Request Detail
-        function viewRequest(requestId) {
-            window.location.href = `/admin/requests/${requestId}`;
-        }
-        
-        // Logout confirmation
-        document.querySelector('form[action="{{ route("logout") }}"]').addEventListener('submit', function(e) {
-            if (!confirm('Apakah Anda yakin ingin logout?')) {
-                e.preventDefault();
-            }
-        });
-        
         // Event listeners for chart controls
         document.addEventListener('DOMContentLoaded', function() {
             // Initialize inventory chart
@@ -988,6 +1020,13 @@
             document.getElementById('refreshChart').addEventListener('click', function() {
                 const year = document.getElementById('yearSelect').value;
                 loadInventoryChartData(year);
+            });
+            
+            // Logout confirmation
+            document.querySelector('form[action="{{ route("logout") }}"]').addEventListener('submit', function(e) {
+                if (!confirm('Apakah Anda yakin ingin logout?')) {
+                    e.preventDefault();
+                }
             });
         });
     </script>

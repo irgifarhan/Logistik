@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Barang;
 use App\Models\Permintaan;
+use App\Models\PermintaanDetail;
 use App\Models\Kategori;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
@@ -50,9 +51,35 @@ class ReportController extends Controller
      */
     private function getGlobalStats()
     {
+        $totalRequests = Permintaan::count();
+        $multiBarangRequests = Permintaan::has('details')->count();
+        $singleBarangRequests = $totalRequests - $multiBarangRequests;
+        
+        // Hitung total item dari semua permintaan
+        $totalItemsInRequests = 0;
+        $requests = Permintaan::with('details')->get();
+        foreach ($requests as $request) {
+            if ($request->details->count() > 0) {
+                $totalItemsInRequests += $request->details->sum('jumlah');
+            } else {
+                $totalItemsInRequests += $request->jumlah;
+            }
+        }
+        
+        // Hitung total item yang sudah terkirim
+        $totalItemsInExpenditures = 0;
+        $expenditures = Permintaan::with('details')->where('status', 'delivered')->get();
+        foreach ($expenditures as $expenditure) {
+            if ($expenditure->details->count() > 0) {
+                $totalItemsInExpenditures += $expenditure->details->sum('jumlah');
+            } else {
+                $totalItemsInExpenditures += $expenditure->jumlah;
+            }
+        }
+        
         return [
             'total_items' => Barang::count(),
-            'total_requests' => Permintaan::count(),
+            'total_requests' => $totalRequests,
             'total_expenditures' => Permintaan::where('status', 'delivered')->count(),
             'total_categories' => Kategori::count(),
             'good_stock' => Barang::whereRaw('stok > stok_minimal * 2')->count(),
@@ -62,8 +89,11 @@ class ReportController extends Controller
             'pending_requests' => Permintaan::where('status', 'pending')->count(),
             'approved_requests' => Permintaan::where('status', 'approved')->count(),
             'rejected_requests' => Permintaan::where('status', 'rejected')->count(),
-            'processing_requests' => Permintaan::where('status', 'processing')->count(),
             'delivered_requests' => Permintaan::where('status', 'delivered')->count(),
+            'multi_barang_requests' => $multiBarangRequests,
+            'single_barang_requests' => $singleBarangRequests,
+            'total_items_in_requests' => $totalItemsInRequests,
+            'total_items_in_expenditures' => $totalItemsInExpenditures,
         ];
     }
     
@@ -92,11 +122,29 @@ class ReportController extends Controller
         // Inventory stats
         $inventoryItems = Barang::whereBetween('created_at', [$startDate, $endDate])->get();
         
-        // Requests stats
-        $requests = Permintaan::whereBetween('created_at', [$startDate, $endDate])->get();
+        // Requests stats - dengan detail multi barang
+        $requests = Permintaan::with(['details'])->whereBetween('created_at', [$startDate, $endDate])->get();
+        
+        // Hitung statistik untuk multi barang
+        $totalItemsInRequests = 0;
+        $multiBarangRequests = 0;
+        $singleBarangRequests = 0;
+        
+        foreach ($requests as $request) {
+            if ($request->details && $request->details->count() > 0) {
+                // Multi barang
+                $multiBarangRequests++;
+                $totalItemsInRequests += $request->details->sum('jumlah');
+            } else {
+                // Single barang
+                $singleBarangRequests++;
+                $totalItemsInRequests += $request->jumlah;
+            }
+        }
         
         // Expenditures stats
-        $expenditures = Permintaan::where('status', 'delivered')
+        $expenditures = Permintaan::with(['details'])
+            ->where('status', 'delivered')
             ->where(function($query) use ($startDate, $endDate) {
                 $query->whereNotNull('delivered_at')
                       ->whereBetween('delivered_at', [$startDate, $endDate])
@@ -104,7 +152,17 @@ class ReportController extends Controller
                           $q->whereNull('delivered_at')
                             ->whereBetween('updated_at', [$startDate, $endDate]);
                       });
-            })->count();
+            })->get();
+        
+        // Hitung total item dalam pengeluaran
+        $totalItemsInExpenditures = 0;
+        foreach ($expenditures as $expenditure) {
+            if ($expenditure->details && $expenditure->details->count() > 0) {
+                $totalItemsInExpenditures += $expenditure->details->sum('jumlah');
+            } else {
+                $totalItemsInExpenditures += $expenditure->jumlah;
+            }
+        }
         
         return [
             'total_items' => $inventoryItems->count(),
@@ -112,12 +170,20 @@ class ReportController extends Controller
             'low_stock' => $inventoryItems->filter(fn($item) => $item->stok <= $item->stok_minimal * 2 && $item->stok > $item->stok_minimal && $item->stok > 0)->count(),
             'critical_stock' => $inventoryItems->filter(fn($item) => $item->stok <= $item->stok_minimal && $item->stok > 0)->count(),
             'out_of_stock' => $inventoryItems->filter(fn($item) => $item->stok <= 0)->count(),
+            
+            // Request stats dengan multi barang
             'total_requests' => $requests->count(),
             'pending_requests' => $requests->where('status', 'pending')->count(),
             'approved_requests' => $requests->where('status', 'approved')->count(),
             'rejected_requests' => $requests->where('status', 'rejected')->count(),
             'delivered_requests' => $requests->where('status', 'delivered')->count(),
-            'total_expenditures' => $expenditures,
+            'total_items_in_requests' => $totalItemsInRequests,
+            'multi_barang_requests' => $multiBarangRequests,
+            'single_barang_requests' => $singleBarangRequests,
+            
+            // Expenditure stats
+            'total_expenditures' => $expenditures->count(),
+            'total_items_in_expenditures' => $totalItemsInExpenditures,
         ];
     }
     
@@ -147,7 +213,7 @@ class ReportController extends Controller
      */
     private function getRequestStatusData()
     {
-        $statuses = ['pending', 'approved', 'rejected', 'processing', 'delivered'];
+        $statuses = ['pending', 'approved', 'rejected', 'delivered'];
         $data = [];
         
         foreach ($statuses as $status) {
@@ -260,46 +326,173 @@ class ReportController extends Controller
     }
     
     /**
-     * Generate requests report table
+     * Generate requests report table dengan dukungan multi barang
      */
     private function generateRequestsTable($startDate, $endDate)
     {
-        $data = Permintaan::with(['user', 'barang', 'satker'])
+        $data = Permintaan::with(['user', 'satker', 'details.barang.satuan', 'details.satker'])
             ->whereBetween('created_at', [$startDate, $endDate])
             ->get();
         
         if ($data->isEmpty()) {
-            return '<tr><td colspan="9" class="text-center py-4">Tidak ada data permintaan dalam periode yang dipilih.</td></tr>';
+            return '<tr><td colspan="10" class="text-center py-4">Tidak ada data permintaan dalam periode yang dipilih.</td></tr>';
         }
         
         $html = '';
         $no = 1;
+        
+        // Buat array untuk menyimpan script JavaScript
+        $scriptData = [];
+        
         foreach ($data as $item) {
             $statusText = $this->getStatusText($item->status);
             $statusClass = $this->getStatusClass($item->status);
             
+            // Tentukan jenis permintaan
+            $isMultiBarang = $item->details && $item->details->count() > 0;
+            $jenisPermintaan = $isMultiBarang ? 
+                '<span class="badge badge-multi">Multi Barang</span>' : 
+                '<span class="badge badge-single">Single Barang</span>';
+            
+            // Hitung total item
+            $totalItem = $isMultiBarang ? 
+                $item->details->sum('jumlah') : 
+                $item->jumlah;
+            
+            // Hitung jumlah barang berbeda
+            $jumlahBarang = $isMultiBarang ? 
+                $item->details->count() . ' jenis' : 
+                '1 jenis';
+            
+            // Format jumlah barang untuk tampilan
+            $jumlahBarangDisplay = $isMultiBarang ? 
+                $item->details->count() . ' jenis' : 
+                '1 jenis';
+            
+            // Format total item untuk tampilan
+            $totalItemDisplay = $isMultiBarang ? 
+                $item->details->sum('jumlah') . ' unit' : 
+                $item->jumlah . ' unit';
+            
+            // Generate detail barang untuk modal
+            $detailHtml = $this->generateBarangDetailsHtml($item);
+            
+            // Simpan detail HTML untuk JavaScript (tidak langsung di baris tabel)
+            $scriptData[] = "detailData[" . $item->id . "] = `" . str_replace('`', '\`', $detailHtml) . "`;";
+            
             $html .= '<tr>';
-            $html .= '<td>' . $no++ . '</td>';
-            $html .= '<td>' . $item->kode_permintaan . '</td>';
+            $html .= '<td class="text-center">' . $no++ . '</td>';
+            $html .= '<td><strong>' . $item->kode_permintaan . '</strong></td>';
             $html .= '<td>' . $item->created_at->format('d/m/Y H:i') . '</td>';
             $html .= '<td>' . ($item->user->name ?? '-') . '</td>';
             $html .= '<td>' . ($item->satker->nama_satker ?? '-') . '</td>';
-            $html .= '<td>' . ($item->barang->nama_barang ?? '-') . '</td>';
-            $html .= '<td>' . $item->jumlah . ' ' . ($item->barang->satuan->nama_satuan ?? '') . '</td>';
-            $html .= '<td>' . $item->keperluan . '</td>';
-            $html .= '<td><span class="badge ' . $statusClass . '">' . $statusText . '</span></td>';
+            $html .= '<td class="text-center">' . $jenisPermintaan . '</td>';
+            $html .= '<td class="text-center">' . $jumlahBarangDisplay . '</td>';
+            $html .= '<td class="text-center"><strong>' . $totalItemDisplay . '</strong></td>';
+            $html .= '<td class="text-center"><span class="badge ' . $statusClass . '">' . $statusText . '</span></td>';
+            $html .= '<td class="text-center">';
+            $html .= '<button class="btn btn-sm btn-outline-info" onclick="showBarangDetails(' . $item->id . ')" title="Lihat Detail Barang">';
+            $html .= '<i class="bi bi-list-ul"></i>';
+            $html .= '</button>';
+            $html .= '</td>';
             $html .= '</tr>';
+        }
+        
+        // Tambahkan script JavaScript di akhir (setelah semua baris tabel)
+        if (!empty($scriptData)) {
+            $html .= '<script type="text/javascript">';
+            $html .= 'if (typeof detailData === "undefined") { window.detailData = {}; }';
+            $html .= implode('', $scriptData);
+            $html .= '</script>';
         }
         
         return $html;
     }
     
     /**
-     * Generate expenditures report table
+     * Generate HTML untuk detail barang dalam modal
+     */
+    private function generateBarangDetailsHtml($permintaan)
+    {
+        $isMultiBarang = $permintaan->details && $permintaan->details->count() > 0;
+        
+        if (!$isMultiBarang) {
+            // Single barang
+            return '
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead>
+                        <tr>
+                            <th>Barang</th>
+                            <th>Kode</th>
+                            <th>Jumlah</th>
+                            <th>Satuan</th>
+                            <th>Satker</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>' . ($permintaan->barang->nama_barang ?? '-') . '</td>
+                            <td>' . ($permintaan->barang->kode_barang ?? '-') . '</td>
+                            <td>' . $permintaan->jumlah . '</td>
+                            <td>' . ($permintaan->barang->satuan->nama_satuan ?? '-') . '</td>
+                            <td>' . ($permintaan->satker->nama_satker ?? '-') . '</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>';
+        }
+        
+        // Multi barang
+        $html = '
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Barang</th>
+                        <th>Kode</th>
+                        <th>Jumlah</th>
+                        <th>Satuan</th>
+                        <th>Satker</th>
+                    </tr>
+                </thead>
+                <tbody>';
+        
+        $no = 1;
+        foreach ($permintaan->details as $detail) {
+            $html .= '
+                <tr>
+                    <td>' . $no++ . '</td>
+                    <td>' . ($detail->barang->nama_barang ?? '-') . '</td>
+                    <td>' . ($detail->barang->kode_barang ?? '-') . '</td>
+                    <td>' . $detail->jumlah . '</td>
+                    <td>' . ($detail->barang->satuan->nama_satuan ?? '-') . '</td>
+                    <td>' . ($detail->satker->nama_satker ?? $permintaan->satker->nama_satker ?? '-') . '</td>
+                </tr>';
+        }
+        
+        $html .= '
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th colspan="3" class="text-end">Total:</th>
+                        <th>' . $permintaan->details->sum('jumlah') . '</th>
+                        <th colspan="2">unit</th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>';
+        
+        return $html;
+    }
+    
+    /**
+     * Generate expenditures report table dengan dukungan multi barang
      */
     private function generateExpendituresTable($startDate, $endDate)
     {
-        $data = Permintaan::with(['user', 'barang', 'satker'])
+        $data = Permintaan::with(['user', 'barang', 'satker', 'details.barang.satuan', 'details.satker'])
             ->where('status', 'delivered')
             ->where(function($query) use ($startDate, $endDate) {
                 $query->whereNotNull('delivered_at')
@@ -318,6 +511,17 @@ class ReportController extends Controller
         $html = '';
         $no = 1;
         foreach ($data as $item) {
+            $isMultiBarang = $item->details && $item->details->count() > 0;
+            $jenis = $isMultiBarang ? 'Multi Barang' : 'Single Barang';
+            
+            $jumlahBarang = $isMultiBarang ? 
+                $item->details->count() . ' jenis' : 
+                '1 jenis';
+            
+            $totalItem = $isMultiBarang ? 
+                $item->details->sum('jumlah') : 
+                $item->jumlah;
+            
             $tanggal = '-';
             if ($item->delivered_at) {
                 try {
@@ -331,11 +535,15 @@ class ReportController extends Controller
             
             $html .= '<tr>';
             $html .= '<td>' . $no++ . '</td>';
-            $html .= '<td>' . $item->kode_permintaan . '</td>';
+            $html .= '<td><strong>' . $item->kode_permintaan . '</strong></td>';
             $html .= '<td>' . $tanggal . '</td>';
-            $html .= '<td>' . ($item->barang->nama_barang ?? '-') . '</td>';
-            $html .= '<td>' . $item->jumlah . '</td>';
-            $html .= '<td>' . ($item->barang->satuan->nama_satuan ?? '-') . '</td>';
+            $html .= '<td>';
+            $html .= $isMultiBarang ? 
+                '<span class="badge badge-multi">Multi Barang</span>' : 
+                '<span class="badge badge-single">Single Barang</span>';
+            $html .= '</td>';
+            $html .= '<td>' . $jumlahBarang . '</td>';
+            $html .= '<td><strong>' . $totalItem . ' unit</strong></td>';
             $html .= '<td>' . ($item->satker->nama_satker ?? '-') . '</td>';
             $html .= '<td>' . ($item->keperluan ?? '-') . '</td>';
             $html .= '</tr>';
@@ -390,7 +598,7 @@ class ReportController extends Controller
         $data = $query->get();
         
         $filename = 'laporan-barang-' . date('Y-m-d');
-        $headers = ['Kode Barang', 'Nama Barang', 'Kategori', 'Stok', 'Stok Minimal', 'Satuan', 'Gudang', 'Lokasi', 'Harga Beli', 'Harga Jual', 'Status Stok'];
+        $headers = ['Kode Barang', 'Nama Barang', 'Kategori', 'Stok', 'Stok Minimal', 'Satuan', 'Gudang', 'Lokasi', 'Status Stok'];
         
         $rows = $data->map(function($item) {
             $status = $item->stok <= 0 ? 'Habis' : 
@@ -406,68 +614,98 @@ class ReportController extends Controller
                 $item->satuan->nama_satuan ?? '',
                 $item->gudang->nama_gudang ?? '',
                 $item->lokasi,
-                $item->harga_beli,
-                $item->harga_jual,
                 $status
             ];
         });
         
-        // Pilih format berdasarkan parameter
         switch ($format) {
             case 'pdf':
                 return $this->exportToPdf('Laporan Stok Barang', $headers, $rows->toArray(), $filename . '.pdf');
             case 'excel':
                 return $this->exportToExcel('Laporan Stok Barang', $headers, $rows->toArray(), $filename);
-            default: // csv
+            default:
                 return $this->exportToCsv($headers, $rows->toArray(), $filename . '.csv');
         }
     }
     
     /**
-     * Export requests data
+     * Export requests data dengan dukungan multi barang
      */
     private function exportRequests($format, $startDate, $endDate)
     {
-        $query = Permintaan::with(['user', 'barang', 'satker']);
+        $query = Permintaan::with(['user', 'barang', 'satker', 'details.barang.satuan', 'details.satker']);
         if ($startDate && $endDate) {
             $query->whereBetween('created_at', [$startDate, $endDate]);
         }
         $data = $query->get();
         
         $filename = 'laporan-permintaan-' . date('Y-m-d');
-        $headers = ['Kode Permintaan', 'Tanggal', 'Pemohon', 'Satker', 'Barang', 'Jumlah', 'Satuan', 'Keperluan', 'Status'];
+        $headers = ['Kode Permintaan', 'Tanggal', 'Pemohon', 'Satker', 'Jenis', 'Jumlah Barang', 'Total Item', 'Status', 'Barang Detail'];
         
         $rows = $data->map(function($requestItem) {
+            $isMultiBarang = $requestItem->details && $requestItem->details->count() > 0;
+            $jenis = $isMultiBarang ? 'Multi Barang' : 'Single Barang';
+            
+            $jumlahBarang = $isMultiBarang ? 
+                $requestItem->details->count() . ' jenis' : 
+                '1 jenis';
+            
+            $totalItem = $isMultiBarang ? 
+                $requestItem->details->sum('jumlah') : 
+                $requestItem->jumlah;
+            
+            // Generate detail barang untuk export
+            $detailBarang = '';
+            if ($isMultiBarang) {
+                foreach ($requestItem->details as $detail) {
+                    $detailBarang .= sprintf(
+                        "%s (%s): %d %s - %s; ",
+                        $detail->barang->nama_barang ?? '',
+                        $detail->barang->kode_barang ?? '',
+                        $detail->jumlah,
+                        $detail->barang->satuan->nama_satuan ?? '',
+                        $detail->satker->nama_satker ?? $requestItem->satker->nama_satker ?? ''
+                    );
+                }
+            } else {
+                $detailBarang = sprintf(
+                    "%s (%s): %d %s",
+                    $requestItem->barang->nama_barang ?? '',
+                    $requestItem->barang->kode_barang ?? '',
+                    $requestItem->jumlah,
+                    $requestItem->barang->satuan->nama_satuan ?? ''
+                );
+            }
+            
             return [
                 $requestItem->kode_permintaan,
                 $requestItem->created_at->format('d/m/Y'),
                 $requestItem->user->name ?? '',
                 $requestItem->satker->nama_satker ?? '',
-                $requestItem->barang->nama_barang ?? '',
-                $requestItem->jumlah,
-                $requestItem->barang->satuan->nama_satuan ?? '',
-                $requestItem->keperluan,
+                $jenis,
+                $jumlahBarang,
+                $totalItem,
                 $this->getStatusText($requestItem->status),
+                $detailBarang
             ];
         });
         
-        // Pilih format berdasarkan parameter
         switch ($format) {
             case 'pdf':
                 return $this->exportToPdf('Laporan Permintaan Barang', $headers, $rows->toArray(), $filename . '.pdf');
             case 'excel':
                 return $this->exportToExcel('Laporan Permintaan Barang', $headers, $rows->toArray(), $filename);
-            default: // csv
+            default:
                 return $this->exportToCsv($headers, $rows->toArray(), $filename . '.csv');
         }
     }
     
     /**
-     * Export expenditures data
+     * Export expenditures data dengan dukungan multi barang
      */
     private function exportExpenditures($format, $startDate, $endDate)
     {
-        $query = Permintaan::with(['user', 'barang', 'satker'])
+        $query = Permintaan::with(['user', 'barang', 'satker', 'details.barang.satuan', 'details.satker'])
             ->where('status', 'delivered');
             
         if ($startDate && $endDate) {
@@ -484,9 +722,20 @@ class ReportController extends Controller
         $data = $query->get();
         
         $filename = 'laporan-pengeluaran-' . date('Y-m-d');
-        $headers = ['Kode Permintaan', 'Tanggal Pengiriman', 'Barang', 'Jumlah', 'Satuan', 'Penerima (Satker)', 'Keperluan'];
+        $headers = ['Kode Permintaan', 'Tanggal Pengiriman', 'Jenis', 'Jumlah Barang', 'Total Item', 'Penerima (Satker)', 'Keperluan', 'Detail Barang'];
         
         $rows = $data->map(function($expenditure) {
+            $isMultiBarang = $expenditure->details && $expenditure->details->count() > 0;
+            $jenis = $isMultiBarang ? 'Multi Barang' : 'Single Barang';
+            
+            $jumlahBarang = $isMultiBarang ? 
+                $expenditure->details->count() . ' jenis' : 
+                '1 jenis';
+            
+            $totalItem = $isMultiBarang ? 
+                $expenditure->details->sum('jumlah') : 
+                $expenditure->jumlah;
+            
             $deliveredAtFormatted = '';
             if ($expenditure->delivered_at) {
                 try {
@@ -498,24 +747,46 @@ class ReportController extends Controller
                 $deliveredAtFormatted = $expenditure->updated_at->format('d/m/Y H:i') . ' (update)';
             }
             
+            // Generate detail barang untuk export
+            $detailBarang = '';
+            if ($isMultiBarang) {
+                foreach ($expenditure->details as $detail) {
+                    $detailBarang .= sprintf(
+                        "%s (%s): %d %s; ",
+                        $detail->barang->nama_barang ?? '',
+                        $detail->barang->kode_barang ?? '',
+                        $detail->jumlah,
+                        $detail->barang->satuan->nama_satuan ?? ''
+                    );
+                }
+            } else {
+                $detailBarang = sprintf(
+                    "%s (%s): %d %s",
+                    $expenditure->barang->nama_barang ?? '',
+                    $expenditure->barang->kode_barang ?? '',
+                    $expenditure->jumlah,
+                    $expenditure->barang->satuan->nama_satuan ?? ''
+                );
+            }
+            
             return [
                 $expenditure->kode_permintaan,
                 $deliveredAtFormatted,
-                $expenditure->barang->nama_barang ?? '',
-                $expenditure->jumlah,
-                $expenditure->barang->satuan->nama_satuan ?? '',
+                $jenis,
+                $jumlahBarang,
+                $totalItem,
                 $expenditure->satker->nama_satker ?? '',
                 $expenditure->keperluan,
+                $detailBarang
             ];
         });
         
-        // Pilih format berdasarkan parameter
         switch ($format) {
             case 'pdf':
                 return $this->exportToPdf('Laporan Pengeluaran Barang', $headers, $rows->toArray(), $filename . '.pdf');
             case 'excel':
                 return $this->exportToExcel('Laporan Pengeluaran Barang', $headers, $rows->toArray(), $filename);
-            default: // csv
+            default:
                 return $this->exportToCsv($headers, $rows->toArray(), $filename . '.csv');
         }
     }
@@ -548,7 +819,6 @@ class ReportController extends Controller
             'pending' => Permintaan::where('status', 'pending')->whereBetween('created_at', [$startDate, $endDate])->count(),
             'approved' => Permintaan::where('status', 'approved')->whereBetween('created_at', [$startDate, $endDate])->count(),
             'rejected' => Permintaan::where('status', 'rejected')->whereBetween('created_at', [$startDate, $endDate])->count(),
-            'processing' => Permintaan::where('status', 'processing')->whereBetween('created_at', [$startDate, $endDate])->count(),
             'delivered' => Permintaan::where('status', 'delivered')
                 ->where(function($query) use ($startDate, $endDate) {
                     $query->whereNotNull('delivered_at')
@@ -837,7 +1107,6 @@ class ReportController extends Controller
             
         } catch (\Exception $e) {
             Log::error('Excel export failed: ' . $e->getMessage());
-            Log::error('Error trace: ' . $e->getTraceAsString());
             
             // Fallback ke CSV jika Excel gagal
             Log::warning('Excel export failed, falling back to CSV: ' . $e->getMessage());

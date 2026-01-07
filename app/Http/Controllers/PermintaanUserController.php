@@ -117,92 +117,92 @@ class PermintaanUserController extends Controller
      * Store a newly created resource in storage.
      */
     public function store(Request $request)
-{
-    // Validasi input untuk multi barang
-    $validated = $request->validate([
-        'satker_id' => 'required|exists:satkers,id',
-        'keterangan' => 'nullable|string|max:500',
-        'tanggal_dibutuhkan' => 'required|date|after_or_equal:today',
-        'barang_items' => 'required|array|min:1',
-        'barang_items.*.barang_id' => 'required|exists:barangs,id',
-        'barang_items.*.jumlah' => 'required|integer|min:1',
-    ]);
-    
-    try {
-        DB::beginTransaction();
-        
-        // Generate kode permintaan
-        $kodePermintaan = 'PM-' . date('Ymd') . '-' . Str::random(6);
-        
-        $totalJumlah = 0;
-        $totalHarga = 0;
-        
-        // Hitung total dulu
-        foreach ($validated['barang_items'] as $item) {
-            $barang = Barang::findOrFail($item['barang_id']);
-            
-            // Cek stok barang
-            if ($barang->stok < $item['jumlah']) {
-                DB::rollBack();
-                return back()->with('error', 'Stok barang "' . $barang->nama_barang . '" tidak mencukupi. Stok tersedia: ' . $barang->stok);
-            }
-            
-            $harga = $barang->harga ?? 0;
-            $totalJumlah += $item['jumlah'];
-            $totalHarga += ($harga * $item['jumlah']);
-        }
-        
-        // Simpan permintaan header
-        $permintaan = Permintaan::create([
-            'kode_permintaan' => $kodePermintaan,
-            'user_id' => auth()->id(),
-            'barang_id' => $validated['barang_items'][0]['barang_id'], // Simpan barang pertama untuk kompatibilitas
-            'satker_id' => $validated['satker_id'],
-            'jumlah' => $totalJumlah,
-            'total_items' => count($validated['barang_items']),
-            'total_harga' => $totalHarga,
-            'keterangan' => $validated['keterangan'] ?? null,
-            'tanggal_dibutuhkan' => $validated['tanggal_dibutuhkan'],
-            'status' => 'pending',
+    {
+        // Validasi input untuk multi barang
+        $validated = $request->validate([
+            'satker_id' => 'required|exists:satkers,id',
+            'keterangan' => 'nullable|string|max:500',
+            'tanggal_dibutuhkan' => 'required|date|after_or_equal:today',
+            'barang_items' => 'required|array|min:1',
+            'barang_items.*.barang_id' => 'required|exists:barangs,id',
+            'barang_items.*.jumlah' => 'required|integer|min:1',
         ]);
         
-        // Simpan detail permintaan
-        foreach ($validated['barang_items'] as $item) {
-            $barang = Barang::findOrFail($item['barang_id']);
-            $harga = $barang->harga ?? 0;
+        try {
+            DB::beginTransaction();
             
-            PermintaanDetail::create([
-                'permintaan_id' => $permintaan->id,
-                'barang_id' => $item['barang_id'],
-                'jumlah' => $item['jumlah'],
-                'harga_satuan' => $harga,
-                'subtotal' => $harga * $item['jumlah'],
+            // Generate kode permintaan
+            $kodePermintaan = 'PM-' . date('Ymd') . '-' . Str::random(6);
+            
+            $totalJumlah = 0;
+            $totalHarga = 0;
+            
+            // Hitung total dulu
+            foreach ($validated['barang_items'] as $item) {
+                $barang = Barang::findOrFail($item['barang_id']);
+                
+                // Cek stok barang
+                if ($barang->stok < $item['jumlah']) {
+                    DB::rollBack();
+                    return back()->with('error', 'Stok barang "' . $barang->nama_barang . '" tidak mencukupi. Stok tersedia: ' . $barang->stok);
+                }
+                
+                $harga = $barang->harga ?? 0;
+                $totalJumlah += $item['jumlah'];
+                $totalHarga += ($harga * $item['jumlah']);
+            }
+            
+            // Simpan permintaan header
+            $permintaan = Permintaan::create([
+                'kode_permintaan' => $kodePermintaan,
+                'user_id' => auth()->id(),
+                'barang_id' => $validated['barang_items'][0]['barang_id'], // Simpan barang pertama untuk kompatibilitas
+                'satker_id' => $validated['satker_id'],
+                'jumlah' => $totalJumlah,
+                'total_items' => count($validated['barang_items']),
+                'total_harga' => $totalHarga,
+                'keterangan' => $validated['keterangan'] ?? null,
+                'tanggal_dibutuhkan' => $validated['tanggal_dibutuhkan'],
+                'status' => 'pending',
             ]);
-        }
-        
-        // Log aktivitas pengajuan permintaan baru
-        $logData = [
-            'permintaan_id' => $permintaan->id,
-            'kode_permintaan' => $kodePermintaan,
-            'jumlah_barang' => count($validated['barang_items']),
-            'total_jumlah' => $totalJumlah,
-            'total_harga' => $totalHarga,
-            'satker' => Satker::find($validated['satker_id'])->nama_satker ?? 'Tidak diketahui',
-            'tanggal_dibutuhkan' => $validated['tanggal_dibutuhkan'],
-        ];
-        ActivityLogController::logAction('create_request', 'Mengajukan permintaan baru: ' . $kodePermintaan, $logData);
-        
-        DB::commit();
-        
-        return redirect()->route('user.permintaan')
-            ->with('success', 'Permintaan berhasil diajukan dengan kode: ' . $kodePermintaan);
             
-    } catch (\Exception $e) {
-        DB::rollBack();
-        
-        return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            // Simpan detail permintaan
+            foreach ($validated['barang_items'] as $item) {
+                $barang = Barang::findOrFail($item['barang_id']);
+                $harga = $barang->harga ?? 0;
+                
+                PermintaanDetail::create([
+                    'permintaan_id' => $permintaan->id,
+                    'barang_id' => $item['barang_id'],
+                    'jumlah' => $item['jumlah'],
+                    'harga_satuan' => $harga,
+                    'subtotal' => $harga * $item['jumlah'],
+                ]);
+            }
+            
+            // Log aktivitas pengajuan permintaan baru
+            $logData = [
+                'permintaan_id' => $permintaan->id,
+                'kode_permintaan' => $kodePermintaan,
+                'jumlah_barang' => count($validated['barang_items']),
+                'total_jumlah' => $totalJumlah,
+                'total_harga' => $totalHarga,
+                'satker' => Satker::find($validated['satker_id'])->nama_satker ?? 'Tidak diketahui',
+                'tanggal_dibutuhkan' => $validated['tanggal_dibutuhkan'],
+            ];
+            ActivityLogController::logAction('create_request', 'Mengajukan permintaan baru: ' . $kodePermintaan, $logData);
+            
+            DB::commit();
+            
+            return redirect()->route('user.permintaan')
+                ->with('success', 'Permintaan berhasil diajukan dengan kode: ' . $kodePermintaan);
+                
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            return back()->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+        }
     }
-}
 
     /**
      * Display the specified resource.
@@ -221,35 +221,60 @@ class PermintaanUserController extends Controller
         ]);
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit($id)
-    {
-        $user = auth()->user();
-        
-        // Hanya bisa edit permintaan yang masih pending
-        $permintaan = Permintaan::where('user_id', $user->id)
-            ->where('status', 'pending')
-            ->with(['details.barang', 'barang', 'satker'])
-            ->findOrFail($id);
-        
-        $barang = Barang::where('stok', '>', 0)
-            ->orderBy('nama_barang')
-            ->get();
+   /**
+ * Show the form for editing the specified resource - MULTI BARANG
+ */
+public function edit($id)
+{
+    $user = auth()->user();
+    
+    // Hanya bisa edit permintaan yang masih pending
+    $permintaan = Permintaan::where('user_id', $user->id)
+        ->where('status', 'pending')
+        ->with(['details.barang.satuan', 'details.barang.kategori', 'satker'])
+        ->findOrFail($id);
+    
+    // Get all available barang (stok > 0) + barang yang sudah ada di permintaan
+    $barang = Barang::where(function($query) use ($permintaan) {
+            $query->where('stok', '>', 0)
+                  ->orWhereIn('id', $permintaan->details->pluck('barang_id')->toArray());
+        })
+        ->orderBy('nama_barang')
+        ->get();
             
-        $satkers = Satker::orderBy('nama_satker')->get();
+    $satkers = Satker::orderBy('nama_satker')->get();
+    
+    return view('user.permintaan', [
+        'permintaan' => $permintaan,
+        'barang' => $barang,
+        'satkers' => $satkers,
+        'isEdit' => true
+    ]);
+}
+
+/**
+ * API untuk mendapatkan stok barang real-time
+ */
+public function getStokBarang($id)
+{
+    try {
+        $barang = Barang::findOrFail($id);
         
-        return view('user.permintaan', [
-            'permintaan' => $permintaan,
-            'barang' => $barang,
-            'satkers' => $satkers,
-            'isEdit' => true
+        return response()->json([
+            'success' => true,
+            'stok' => $barang->stok,
+            'satuan' => $barang->satuan->nama_satuan ?? 'unit'
         ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Barang tidak ditemukan'
+        ], 404);
     }
+}
 
     /**
-     * Update the specified resource in storage.
+     * Update the specified resource in storage - MULTI BARANG
      */
     public function update(Request $request, $id)
     {
@@ -269,6 +294,7 @@ class PermintaanUserController extends Controller
             // Cari permintaan milik user yang sedang login dan status pending
             $permintaan = Permintaan::where('user_id', $user->id)
                 ->where('status', 'pending')
+                ->with(['details'])
                 ->findOrFail($id);
             
             DB::beginTransaction();
@@ -285,6 +311,7 @@ class PermintaanUserController extends Controller
             $permintaan->details()->delete();
             
             $totalJumlah = 0;
+            $totalHarga = 0;
             
             // Simpan detail baru
             foreach ($validated['barang_items'] as $item) {
@@ -296,19 +323,27 @@ class PermintaanUserController extends Controller
                     return back()->with('error', 'Stok barang "' . $barang->nama_barang . '" tidak mencukupi. Stok tersedia: ' . $barang->stok);
                 }
                 
+                $harga = $barang->harga ?? 0;
+                $subtotal = $harga * $item['jumlah'];
+                
                 PermintaanDetail::create([
                     'permintaan_id' => $permintaan->id,
                     'barang_id' => $item['barang_id'],
                     'jumlah' => $item['jumlah'],
-                    'harga_satuan' => $barang->harga ?? 0,
-                    'subtotal' => ($barang->harga ?? 0) * $item['jumlah'],
+                    'harga_satuan' => $harga,
+                    'subtotal' => $subtotal,
                 ]);
                 
                 $totalJumlah += $item['jumlah'];
+                $totalHarga += $subtotal;
             }
             
-            // Update total jumlah di header
-            $permintaan->update(['jumlah' => $totalJumlah]);
+            // Update total jumlah dan harga di header
+            $permintaan->update([
+                'jumlah' => $totalJumlah,
+                'total_harga' => $totalHarga,
+                'barang_id' => $validated['barang_items'][0]['barang_id'], // Update barang_id untuk kompatibilitas
+            ]);
             
             // Log aktivitas edit permintaan
             $logData = [
@@ -316,6 +351,7 @@ class PermintaanUserController extends Controller
                 'kode_permintaan' => $permintaan->kode_permintaan,
                 'jumlah_barang' => count($validated['barang_items']),
                 'total_jumlah' => $totalJumlah,
+                'total_harga' => $totalHarga,
             ];
             ActivityLogController::logAction('update_request', 'Mengubah permintaan: ' . $permintaan->kode_permintaan, $logData);
             

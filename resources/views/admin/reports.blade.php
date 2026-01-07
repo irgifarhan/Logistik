@@ -225,6 +225,24 @@
             border-color: #8b5cf6;
         }
         
+        .badge-processing {
+            background-color: #dbeafe !important;
+            color: #1e40af !important;
+            border-color: #60a5fa;
+        }
+        
+        .badge-multi {
+            background-color: #8b5cf6 !important;
+            color: white !important;
+            border-color: #7c3aed;
+        }
+        
+        .badge-single {
+            background-color: #6b7280 !important;
+            color: white !important;
+            border-color: #4b5563;
+        }
+        
         .table-card {
             background: white;
             border-radius: 10px;
@@ -238,6 +256,16 @@
             font-weight: 600;
             color: var(--dark);
             border-bottom: 2px solid #e2e8f0;
+        }
+        
+        .barang-detail-item {
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #f1f1f1;
+            font-size: 0.85rem;
+        }
+        
+        .barang-detail-item:last-child {
+            border-bottom: none;
         }
         
         @media (max-width: 768px) {
@@ -491,8 +519,19 @@
                                 <td>{{ $report['name'] }}</td>
                                 <td>{{ date('F Y', strtotime($selectedMonth . '-01')) }}</td>
                                 <td id="total_{{ $report['type'] }}_monthly">
-                                    {{ $monthlyStats['total_' . $report['type']] ?? ($report['type'] == 'expenditures' ? $monthlyStats['total_expenditures'] : ($monthlyStats['total_' . $report['type'] . 's'] ?? 0)) }} 
-                                    {{ $report['type'] == 'inventory' ? 'barang' : ($report['type'] == 'requests' ? 'permintaan' : 'pengeluaran') }}
+                                    @if($report['type'] == 'inventory')
+                                        {{ $monthlyStats['total_items'] ?? 0 }} barang
+                                    @elseif($report['type'] == 'requests')
+                                        {{ $monthlyStats['total_requests'] ?? 0 }} permintaan
+                                        <br><small class="text-muted">
+                                            {{ $monthlyStats['total_items_in_requests'] ?? 0 }} item barang
+                                        </small>
+                                    @else
+                                        {{ $monthlyStats['total_expenditures'] ?? 0 }} pengeluaran
+                                        <br><small class="text-muted">
+                                            {{ $monthlyStats['total_items_in_expenditures'] ?? 0 }} item terkirim
+                                        </small>
+                                    @endif
                                 </td>
                                 <td id="status_{{ $report['type'] }}_monthly">
                                     @if($report['type'] == 'inventory')
@@ -505,6 +544,15 @@
                                     <span class="badge badge-approved">{{ $monthlyStats['approved_requests'] ?? 0 }} Disetujui</span>
                                     <span class="badge badge-rejected">{{ $monthlyStats['rejected_requests'] ?? 0 }} Ditolak</span>
                                     <span class="badge badge-delivered">{{ $monthlyStats['delivered_requests'] ?? 0 }} Terkirim</span>
+                                    @if(isset($monthlyStats['multi_barang_requests']) && $monthlyStats['multi_barang_requests'] > 0)
+                                    <br>
+                                    <span class="badge badge-multi mt-1">
+                                        {{ $monthlyStats['multi_barang_requests'] ?? 0 }} Multi Barang
+                                    </span>
+                                    <span class="badge badge-single mt-1">
+                                        {{ $monthlyStats['single_barang_requests'] ?? 0 }} Single Barang
+                                    </span>
+                                    @endif
                                     @else
                                     <span class="badge bg-info">Pengeluaran Barang</span>
                                     @endif
@@ -604,6 +652,9 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
 <script>
+    // Variabel global untuk menyimpan detail barang
+    let detailData = {};
+    
     $(document).ready(function() {
         initCharts();
         initExportModal();
@@ -735,15 +786,20 @@
             <span class="badge bg-secondary">${data.out_of_stock} Habis</span>
         `);
         
-        $('#total_requests_monthly').text(data.total_requests + ' permintaan');
+        $('#total_requests_monthly').html(`${data.total_requests} permintaan<br>
+            <small class="text-muted">${data.total_items_in_requests} item barang</small>`);
         $('#status_requests_monthly').html(`
             <span class="badge badge-pending">${data.pending_requests} Pending</span>
             <span class="badge badge-approved">${data.approved_requests} Disetujui</span>
             <span class="badge badge-rejected">${data.rejected_requests} Ditolak</span>
             <span class="badge badge-delivered">${data.delivered_requests} Terkirim</span>
+            ${data.multi_barang_requests > 0 ? `<br>
+            <span class="badge badge-multi mt-1">${data.multi_barang_requests} Multi Barang</span>
+            <span class="badge badge-single mt-1">${data.single_barang_requests} Single Barang</span>` : ''}
         `);
         
-        $('#total_expenditures_monthly').text(data.total_expenditures + ' pengeluaran');
+        $('#total_expenditures_monthly').html(`${data.total_expenditures} pengeluaran<br>
+            <small class="text-muted">${data.total_items_in_expenditures} item terkirim</small>`);
     }
     
     function updateButtons(selectedMonth) {
@@ -798,6 +854,9 @@
         
         $('#reportTitle').text(`Detail Laporan ${getReportTypeName(type)} - ${monthName}`);
         
+        // Reset detailData
+        detailData = {};
+        
         // Panggil fungsi untuk memuat data
         loadReportData(type, selectedMonth);
         
@@ -835,11 +894,16 @@
         $.ajax({
             url: '{{ route("admin.reports.view-details") }}',
             type: 'GET',
-            data: { report_type: type, start_date: startDate, end_date: endDate },
+            data: { 
+                report_type: type, 
+                start_date: startDate, 
+                end_date: endDate 
+            },
             success: function(response) {
                 $('#reportDataBody').html(response);
             },
             error: function(xhr) {
+                console.error('Error loading report data:', xhr);
                 $('#reportDataBody').html(`
                     <tr>
                         <td colspan="${columnCount}" class="text-center py-4">
@@ -855,54 +919,55 @@
     }
     
     function getTableHeaders(type) {
-        switch(type) {
-            case 'inventory':
-                return `<tr>
-                    <th>No</th>
-                    <th>Kode Barang</th>
-                    <th>Nama Barang</th>
-                    <th>Kategori</th>
-                    <th>Stok</th>
-                    <th>Stok Minimal</th>
-                    <th>Satuan</th>
-                    <th>Gudang</th>
-                    <th>Status</th>
-                </tr>`;
-                
-            case 'requests':
-                return `<tr>
-                    <th>No</th>
-                    <th>Kode Permintaan</th>
-                    <th>Tanggal</th>
-                    <th>Pemohon</th>
-                    <th>Satker</th>
-                    <th>Barang</th>
-                    <th>Jumlah</th>
-                    <th>Keperluan</th>
-                    <th>Status</th>
-                </tr>`;
-                
-            case 'expenditures':
-                return `<tr>
-                    <th>No</th>
-                    <th>Kode Permintaan</th>
-                    <th>Tanggal Pengiriman</th>
-                    <th>Barang</th>
-                    <th>Jumlah</th>
-                    <th>Satuan</th>
-                    <th>Penerima</th>
-                    <th>Keperluan</th>
-                </tr>`;
-                
-            default:
-                return `<tr><th>Data</th></tr>`;
-        }
+    switch(type) {
+        case 'inventory':
+            return `<tr>
+                <th class="text-center">No</th>
+                <th>Kode Barang</th>
+                <th>Nama Barang</th>
+                <th>Kategori</th>
+                <th class="text-center">Stok</th>
+                <th class="text-center">Stok Minimal</th>
+                <th>Satuan</th>
+                <th>Gudang</th>
+                <th class="text-center">Status</th>
+            </tr>`;
+            
+        case 'requests':
+            return `<tr>
+                <th class="text-center">No</th>
+                <th>Kode Permintaan</th>
+                <th>Tanggal</th>
+                <th>Pemohon</th>
+                <th>Satker</th>
+                <th class="text-center">Jenis Permintaan</th>
+                <th class="text-center">Jumlah Barang</th>
+                <th class="text-center">Total Item</th>
+                <th class="text-center">Status</th>
+                <th class="text-center">Detail</th>
+            </tr>`;
+            
+        case 'expenditures':
+            return `<tr>
+                <th class="text-center">No</th>
+                <th>Kode Permintaan</th>
+                <th>Tanggal Pengiriman</th>
+                <th class="text-center">Jenis</th>
+                <th class="text-center">Jumlah Barang</th>
+                <th class="text-center">Total Item</th>
+                <th>Penerima</th>
+                <th>Keperluan</th>
+            </tr>`;
+            
+        default:
+            return `<tr><th>Data</th></tr>`;
     }
+}
     
     function getColumnCount(type) {
         switch(type) {
             case 'inventory': return 9;
-            case 'requests': return 9;
+            case 'requests': return 10;
             case 'expenditures': return 8;
             default: return 1;
         }
@@ -959,6 +1024,86 @@
         const [year, month] = monthString.split('-');
         const date = new Date(year, month - 1, 1);
         return date.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    }
+    
+    // Fungsi untuk menampilkan detail barang dalam modal
+    function showBarangDetails(requestId) {
+        const detailHtml = detailData[requestId];
+        
+        if (!detailHtml) {
+            alert('Detail barang tidak tersedia');
+            return;
+        }
+        
+        // Buat modal untuk menampilkan detail
+        const modalHtml = `
+            <div class="modal fade" id="barangDetailModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-box-seam me-2"></i>Detail Barang
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            ${detailHtml}
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+                            <button type="button" class="btn btn-primary" onclick="printDetailBarang()">
+                                <i class="bi bi-printer me-1"></i> Cetak
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Hapus modal sebelumnya jika ada
+        const existingModal = document.getElementById('barangDetailModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        // Tambahkan modal ke body
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        // Tampilkan modal
+        const modal = new bootstrap.Modal(document.getElementById('barangDetailModal'));
+        modal.show();
+    }
+    
+    // Fungsi untuk mencetak detail barang
+    function printDetailBarang() {
+        const modalContent = document.querySelector('#barangDetailModal .modal-body');
+        const printWindow = window.open('', '_blank');
+        
+        printWindow.document.open();
+        printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Detail Barang - SILOG Polres</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 20px; }
+                    table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+                    th { background-color: #f8f9fa; padding: 10px; border: 1px solid #ddd; }
+                    td { padding: 10px; border: 1px solid #ddd; }
+                    .text-center { text-align: center; }
+                    @media print { body { margin: 0; } }
+                </style>
+            </head>
+            <body>
+                <h3>Detail Barang</h3>
+                <p>Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')}</p>
+                <hr>
+                ${modalContent.innerHTML}
+            </body>
+            </html>
+        `);
+        printWindow.document.close();
+        printWindow.print();
     }
     
     // Logout confirmation

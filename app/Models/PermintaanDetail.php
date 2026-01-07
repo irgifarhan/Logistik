@@ -14,7 +14,9 @@ class PermintaanDetail extends Model
         'barang_id',
         'jumlah',
         'harga_satuan',
-        'subtotal'
+        'subtotal',
+        'satker_id',
+        'status'
     ];
 
     protected $casts = [
@@ -34,6 +36,11 @@ class PermintaanDetail extends Model
         return $this->belongsTo(Barang::class);
     }
 
+     public function satker()
+    {
+        return $this->belongsTo(Satker::class);
+    }
+
     // Scope untuk barang tertentu
     public function scopeBarang($query, $barangId)
     {
@@ -44,5 +51,11 @@ class PermintaanDetail extends Model
     public function scopePermintaan($query, $permintaanId)
     {
         return $query->where('permintaan_id', $permintaanId);
+    }
+    
+    // Scope untuk status tertentu
+    public function scopeStatus($query, $status)
+    {
+        return $query->where('status', $status);
     }
 }

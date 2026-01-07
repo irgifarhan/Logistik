@@ -177,7 +177,7 @@
             <!-- Sidebar Navigation -->
             <div class="sidebar-nav flex-grow-1">
                 <div class="nav-item">
-                    <a class="nav-link d-flex align-items-center" href="{{ route('user.dashboard') }}">
+                    <a class="nav-link d-flex align-items-center" href="{{ route('dashboard') }}">
                         <i class="bi bi-speedometer2"></i>
                         <span>Dashboard</span>
                     </a>
@@ -404,7 +404,7 @@
                                             <small class="text-muted">{{ $item->barang->kode_barang ?? '' }}</small>
                                         @endif
                                     </td>
-                                    <td>
+                                    <td class="text-muted">
                                         @if($isMultiBarang)
                                             {{ $totalJumlah }} unit
                                             @if($item->details->count() > 1)
