@@ -533,7 +533,7 @@
     <div class="sidebar">
         <div class="sidebar-brand">
             <h3>SILOG</h3>
-            <p>Superadmin Dashboard</p>
+            <p>Manajemen Satuan Kerja</p>
         </div>
         
         <div class="sidebar-nav">
@@ -541,6 +541,14 @@
                 <a href="{{ route('superadmin.dashboard') }}" class="nav-link">
                     <i class="bi bi-speedometer2"></i>
                     <span>Dashboard</span>
+                </a>
+            </div>
+            
+            <!-- Menu Validasi Pengadaan ditambahkan di sini -->
+            <div class="nav-item">
+                <a href="{{ route('superadmin.procurement') }}" class="nav-link">
+                    <i class="bi bi-cart-check"></i>
+                    <span>Validasi Pengadaan</span>
                 </a>
             </div>
             
@@ -665,12 +673,12 @@
             </div>
             
             <div class="stat-card">
-                <div class="stat-icon" style="background-color: #fef3c7; color: var(--warning);">
-                    <i class="bi bi-clock-history"></i>
+                <div class="stat-icon" style="background-color: #fee2e2; color: #dc2626;">
+                    <i class="bi bi-x-circle"></i>
                 </div>
                 <div class="stat-content">
-                    <h3>{{ $stats['total_permintaan'] ?? 0 }}</h3>
-                    <p>Total Permintaan</p>
+                    <h3>{{ ($stats['total_satker'] ?? 0) - ($stats['satker_aktif'] ?? 0) }}</h3>
+                    <p>Satker Tidak Aktif</p>
                 </div>
             </div>
             
